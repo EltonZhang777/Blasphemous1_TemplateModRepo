@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    tags: ["**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      NUGET_USERNAME: ${{ secrets.NUGET_USERNAME }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate SemVer tag
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $pattern = '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+          if ($tag -cnotmatch $pattern) {
+            throw "Invalid release tag '$tag'."
+          }
+          "VERSION=$($tag -creplace '^v', '')" >> $env:GITHUB_ENV
+
+      - name: Require tag on main
+        run: |
+          git fetch --no-tags origin main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch main.' }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Release tags must point to a commit on main.'
+          }
+
+      - name: Resolve solution and project
+        run: |
+          $solutions = @(Get-ChildItem -LiteralPath . -Filter *.sln -File)
+          $projects = @(Get-ChildItem -LiteralPath . -Filter *.csproj -File)
+          if ($solutions.Count -ne 1 -or $projects.Count -ne 1) {
+            throw 'Expected exactly one solution and one root project.'
+          }
+          "SOLUTION=$($solutions[0].Name)" >> $env:GITHUB_ENV
+          "PROJECT=$($projects[0].Name)" >> $env:GITHUB_ENV
+
+      - name: Restore
+        run: dotnet restore $env:SOLUTION
+
+      - name: Build
+        run: |
+          dotnet build $env:SOLUTION --configuration Release --no-restore `
+            -p:Version=$env:VERSION `
+            -p:GeneratePackageOnBuild=false
+
+      - name: Test
+        run: dotnet test $env:SOLUTION --configuration Release --no-build
+
+      - name: Pack NuGet package
+        run: |
+          dotnet pack $env:PROJECT --configuration Release --no-build `
+            --output publish/nuget `
+            -p:PackageVersion=$env:VERSION
+
+      - name: Prepare release assets
+        run: |
+          [xml]$project = Get-Content -LiteralPath $env:PROJECT -Raw
+          $title = @($project.Project.PropertyGroup | ForEach-Object { $_.Title } |
+            Where-Object { $_ }) | Select-Object -First 1
+          $targetName = @($project.Project.PropertyGroup | ForEach-Object { $_.TargetName } |
+            Where-Object { $_ }) | Select-Object -First 1
+          if (-not $title -or -not $targetName) {
+            throw 'The root project is missing Title or TargetName.'
+          }
+
+          $zipPath = Join-Path $PWD "publish" "$targetName.zip"
+          if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) {
+            throw "The main Mod package was not generated: $zipPath"
+          }
+
+          $packages = @(Get-ChildItem -LiteralPath "publish/nuget" -Filter *.nupkg -File)
+          if ($packages.Count -ne 1) {
+            throw "Expected one NuGet package, found $($packages.Count)."
+          }
+
+          "MOD_TITLE=$title" >> $env:GITHUB_ENV
+          "ZIP_FILE=$zipPath" >> $env:GITHUB_ENV
+          "NUPKG_FILE=$($packages[0].FullName)" >> $env:GITHUB_ENV
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME "$env:ZIP_FILE" `
+            --draft `
+            --title "$env:MOD_TITLE $env:VERSION" `
+            --notes "Draft release for $env:GITHUB_REF_NAME."
+
+      - name: Warn when NuGet username is missing
+        if: env.NUGET_USERNAME == ''
+        run: Write-Warning 'NUGET_USERNAME is not configured; skipping NuGet publication.'
+
+      - name: NuGet login
+        if: env.NUGET_USERNAME != ''
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USERNAME }}
+
+      - name: Publish NuGet package
+        if: env.NUGET_USERNAME != ''
+        run: |
+          dotnet nuget push "$env:NUPKG_FILE" `
+            --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" `
+            --source https://api.nuget.org/v3/index.json

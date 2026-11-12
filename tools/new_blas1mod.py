@@ -130,10 +130,15 @@ OVERLAY_FILES = (
     "README.md",
     "AGENTS.md",
     ".editorconfig",
+    ".gitattributes",
     ".gitignore",
     ".worktreeinclude",
+    ".github/workflows/build.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/discord.yml",
     "NuGet.Config",
     "dotnet_format.bat",
+    "scripts/check-crlf.ps1",
     ".config/wt.toml",
     "docs/agents/domain.md",
     "docs/agents/issue-tracker.md",
@@ -543,6 +548,7 @@ def validate_generated(
                 ".json",
                 ".yml",
                 ".yaml",
+                ".ps1",
             }
             or path.name in {".editorconfig", ".gitignore", ".worktreeinclude"}
         )
@@ -657,6 +663,8 @@ def apply_overlay(
         test_mod_project = copy_test_mod_files(
             project_dir, project_name, machine_identifier, title, author
         )
+    for source in project_dir.rglob("*.cs"):
+        source.write_text(source.read_text(encoding="utf-8-sig"), encoding="utf-8")
     create_solution(dotnet, project_dir, project_name, test_mod_project)
     validate_generated(
         project_dir, machine_identifier, game_version, with_test_mod

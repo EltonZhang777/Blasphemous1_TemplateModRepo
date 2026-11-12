@@ -20,6 +20,10 @@ project that references the generated Mod. Its ZIP contains both assemblies
 under `plugins/`; the switch is opt-in, and the Verification Mod stays out of
 the main Mod's release ZIP and NuGet package.
 
+Generated repositories validate pull requests and `main` pushes on Windows with
+.NET 10. A SemVer tag reachable from `main` creates a draft release containing
+only the main Mod ZIP and can publish its NuGet package with OIDC.
+
 ## Standalone verification Mod template
 
 The package is built from `Templates/Blasphemous1.ModTest.Templates`:

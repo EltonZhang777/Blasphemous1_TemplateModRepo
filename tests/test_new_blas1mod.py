@@ -276,13 +276,62 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue((output / "README.md").is_file())
         self.assertTrue((output / "AGENTS.md").is_file())
         self.assertTrue((output / ".editorconfig").is_file())
+        self.assertTrue((output / ".gitattributes").is_file())
         self.assertTrue((output / ".gitignore").is_file())
+        self.assertIn(
+            "*.cs text eol=crlf",
+            (output / ".gitattributes").read_text(encoding="utf-8"),
+        )
         self.assertTrue((output / ".worktreeinclude").is_file())
         self.assertTrue((output / "dotnet_format.bat").is_file())
         self.assertTrue((output / ".config" / "wt.toml").is_file())
         self.assertTrue((output / "docs" / "agents" / "domain.md").is_file())
         self.assertTrue((output / "docs" / "agents" / "issue-tracker.md").is_file())
         self.assertTrue((output / "docs" / "agents" / "triage-labels.md").is_file())
+        workflow_dir = output / ".github" / "workflows"
+        self.assertTrue((workflow_dir / "build.yml").is_file())
+        self.assertTrue((workflow_dir / "release.yml").is_file())
+        self.assertTrue((workflow_dir / "discord.yml").is_file())
+        self.assertTrue((output / "scripts" / "check-crlf.ps1").is_file())
+
+        build_workflow = (workflow_dir / "build.yml").read_text(encoding="utf-8")
+        self.assertIn("pull_request:", build_workflow)
+        self.assertIn("branches: [main]", build_workflow)
+        self.assertIn("contents: read", build_workflow)
+        self.assertNotIn("contents: write", build_workflow)
+        self.assertNotIn("id-token: write", build_workflow)
+        self.assertIn("windows-latest", build_workflow)
+        self.assertIn("dotnet-version: 10.0.x", build_workflow)
+        self.assertIn("./scripts/check-crlf.ps1", build_workflow)
+        self.assertIn("dotnet restore", build_workflow)
+        self.assertIn("dotnet build", build_workflow)
+        self.assertIn("dotnet test", build_workflow)
+        self.assertIn("dotnet format whitespace", build_workflow)
+        self.assertIn("--severity warn", build_workflow)
+
+        release_workflow = (workflow_dir / "release.yml").read_text(encoding="utf-8")
+        self.assertIn('tags: ["**"]', release_workflow)
+        self.assertIn("contents: write", release_workflow)
+        self.assertIn("id-token: write", release_workflow)
+        self.assertIn("NuGet/login@v1", release_workflow)
+        self.assertIn("NUGET_USERNAME", release_workflow)
+        self.assertIn("if: env.NUGET_USERNAME == ''", release_workflow)
+        self.assertIn("Write-Warning", release_workflow)
+        self.assertIn("if: env.NUGET_USERNAME != ''", release_workflow)
+        self.assertNotIn("secrets.NUGET_API_KEY", release_workflow)
+        self.assertIn("git merge-base --is-ancestor", release_workflow)
+        self.assertIn("gh release create", release_workflow)
+        self.assertIn('Join-Path $PWD "publish" "$targetName.zip"', release_workflow)
+        self.assertNotIn("*$targetName.zip", release_workflow)
+
+        discord_workflow = (workflow_dir / "discord.yml").read_text(encoding="utf-8")
+        self.assertIn("types: [published]", discord_workflow)
+        self.assertIn("WEBHOOK_URL", discord_workflow)
+        self.assertIn("if: env.WEBHOOK_URL == ''", discord_workflow)
+        self.assertIn("::warning::", discord_workflow)
+        self.assertIn("if: env.WEBHOOK_URL != ''", discord_workflow)
+        self.assertIn("--fail-with-body", discord_workflow)
+        self.assertIn("!github.event.release.prerelease", discord_workflow)
 
         project_text = project.read_text(encoding="utf-8")
         main_text = main.read_text(encoding="utf-8")
@@ -324,11 +373,27 @@ class WrapperTests(unittest.TestCase):
             "DeployToGame",
             (output / "AGENTS.md").read_text(encoding="utf-8"),
         )
+        for source in output.rglob("*.cs"):
+            self.assertFalse(
+                source.read_bytes().startswith(b"\xef\xbb\xbf"),
+                str(source),
+            )
 
         for path in output.rglob("*"):
             if not path.is_file():
                 continue
-            if path.suffix not in (".cs", ".csproj", ".sln", ".md", ".xml", ".config", ".toml", ".bat"):
+            if path.suffix not in (
+                ".cs",
+                ".csproj",
+                ".sln",
+                ".md",
+                ".xml",
+                ".config",
+                ".toml",
+                ".bat",
+                ".yml",
+                ".ps1",
+            ):
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
             for placeholder in (
@@ -391,7 +456,15 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(restore.returncode, 0, restore.stdout + restore.stderr)
         build = subprocess.run(
-            ["dotnet", "build", str(solution), "--no-restore"],
+            [
+                "dotnet",
+                "build",
+                str(solution),
+                "--configuration",
+                "Release",
+                "--no-restore",
+                "-p:Version=1.2.3",
+            ],
             env=env,
             capture_output=True,
             text=True,
@@ -400,7 +473,14 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
         test = subprocess.run(
-            ["dotnet", "test", str(solution), "--no-build"],
+            [
+                "dotnet",
+                "test",
+                str(solution),
+                "--configuration",
+                "Release",
+                "--no-build",
+            ],
             env=env,
             capture_output=True,
             text=True,
@@ -408,6 +488,73 @@ class WrapperTests(unittest.TestCase):
             errors="replace",
         )
         self.assertEqual(test.returncode, 0, test.stdout + test.stderr)
+        format_whitespace = subprocess.run(
+            [
+                "dotnet",
+                "format",
+                "whitespace",
+                str(solution),
+                "--no-restore",
+                "--verify-no-changes",
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(
+            format_whitespace.returncode,
+            0,
+            format_whitespace.stdout + format_whitespace.stderr,
+        )
+        format_style = subprocess.run(
+            [
+                "dotnet",
+                "format",
+                "style",
+                str(solution),
+                "--no-restore",
+                "--severity",
+                "warn",
+                "--verify-no-changes",
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(
+            format_style.returncode,
+            0,
+            format_style.stdout + format_style.stderr,
+        )
+
+        nuget_output = output / "release-nuget"
+        packed = subprocess.run(
+            [
+                "dotnet",
+                "pack",
+                str(output / "Blasphemous.Buildable.csproj"),
+                "--configuration",
+                "Release",
+                "--no-build",
+                "--output",
+                str(nuget_output),
+                "-p:PackageVersion=1.2.3",
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
+        self.assertEqual(
+            [path.name for path in nuget_output.glob("*.nupkg")],
+            ["Blasphemous.Buildable.1.2.3.nupkg"],
+        )
 
         package = output / "publish" / "Buildable.zip"
         self.assertTrue(package.is_file())
@@ -418,6 +565,136 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("plugins/Buildable.dll", names)
         self.assertFalse(any(".Tests" in name for name in names))
         self.assertFalse((output / "Blasphemous.Buildable.TestMod").exists())
+
+    def test_generated_crlf_gate_rejects_lf_sources(self):
+        import shutil
+
+        self.install_official_template()
+        output = self.root / "Blasphemous.CrlfGate"
+        result = self.run_wrapper(
+            "--name",
+            "CrlfGate",
+            "--title",
+            "CRLF Gate",
+            "--author",
+            "Test Author",
+            "--output",
+            str(output),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        pwsh = shutil.which("pwsh")
+        self.assertIsNotNone(pwsh)
+        subprocess.run(
+            ["git", "init", "--quiet", str(output)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(output),
+                "-c",
+                "user.name=Wrapper Tests",
+                "-c",
+                "user.email=wrapper-tests@example.invalid",
+                "add",
+                ".",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(output),
+                "-c",
+                "user.name=Wrapper Tests",
+                "-c",
+                "user.email=wrapper-tests@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "baseline",
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        script = output / "scripts" / "check-crlf.ps1"
+        accepted = subprocess.run(
+            [pwsh, "-NoProfile", "-File", str(script)],
+            cwd=str(output),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+        main = output / "Main.cs"
+        main.write_bytes(main.read_bytes().replace(b"\r\n", b"\n"))
+        rejected = subprocess.run(
+            [pwsh, "-NoProfile", "-File", str(script)],
+            cwd=str(output),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn("Main.cs", rejected.stdout + rejected.stderr)
+
+    def test_main_release_zip_is_exact_when_name_ends_with_testmod(self):
+        import zipfile
+
+        self.install_official_template()
+        output = self.root / "Blasphemous.TestMod"
+        result = self.run_wrapper(
+            "--name",
+            "TestMod",
+            "--title",
+            "Test Mod Name",
+            "--author",
+            "Test Author",
+            "--output",
+            str(output),
+            "--with-test-mod",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        solution = output / "Blasphemous.TestMod.sln"
+        built = subprocess.run(
+            ["dotnet", "build", str(solution), "--configuration", "Release"],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+
+        main_zip = output / "publish" / "TestMod.zip"
+        verification_zip = (
+            output
+            / "Blasphemous.TestMod.TestMod"
+            / "publish"
+            / "Blasphemous.TestMod.TestMod.zip"
+        )
+        self.assertTrue(main_zip.is_file())
+        self.assertTrue(verification_zip.is_file())
+        with zipfile.ZipFile(main_zip) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {".gitkeep", "plugins/TestMod.dll"},
+            )
+
+        release_workflow = (
+            output / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('Join-Path $PWD "publish" "$targetName.zip"', release_workflow)
 
     def test_with_test_mod_generates_and_packages_separate_plugin(self):
         import zipfile
@@ -483,6 +760,39 @@ class WrapperTests(unittest.TestCase):
             errors="replace",
         )
         self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+        tested = subprocess.run(
+            ["dotnet", "test", str(solution), "--no-build"],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
+        for format_args in (
+            ("whitespace",),
+            ("style", "--severity", "warn"),
+        ):
+            formatted = subprocess.run(
+                [
+                    "dotnet",
+                    "format",
+                    *format_args,
+                    str(solution),
+                    "--no-restore",
+                    "--verify-no-changes",
+                ],
+                env=self.environment(),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            self.assertEqual(
+                formatted.returncode,
+                0,
+                formatted.stdout + formatted.stderr,
+            )
 
         main_package = output / "publish" / "WithTest.zip"
         test_mod_package = test_mod_dir / "publish" / f"{test_mod_name}.zip"

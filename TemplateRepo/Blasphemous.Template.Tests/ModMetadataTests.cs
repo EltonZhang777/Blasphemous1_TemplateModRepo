@@ -20,7 +20,7 @@ public sealed class ModMetadataTests
         Assert.Equal("@PROJECT_NAME@", GetConstant(modInfoType, "MOD_ID"));
         Assert.Equal("@TITLE@", GetConstant(modInfoType, "MOD_NAME"));
         Assert.Equal("@AUTHOR@", GetConstant(modInfoType, "MOD_AUTHOR"));
-        Assert.Equal("0.1.0", GetConstant(modInfoType, "MOD_VERSION"));
+        Assert.False(string.IsNullOrWhiteSpace(GetConstant(modInfoType, "MOD_VERSION")));
         Assert.Equal("@MACHINE_IDENTIFIER@.dll", Path.GetFileName(ModAssembly.Location));
     }
 
