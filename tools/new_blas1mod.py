@@ -2,6 +2,7 @@
 """Generate a Blasphemous 1 Mod repository from the official 1.4.1 template."""
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -11,6 +12,7 @@ import tempfile
 import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from xml.sax.saxutils import escape as escape_xml
 
 
 REQUIRED_TEMPLATE = "Blasphemous.Modding.Templates"
@@ -139,6 +141,12 @@ OVERLAY_FILES = (
     "resources/.gitkeep",
 )
 TEST_PROJECT_SOURCE = "Blasphemous.Template.Tests"
+TEST_MOD_TEMPLATE_SOURCE = (
+    Path(__file__).resolve().parent.parent
+    / "Templates"
+    / "Blasphemous1.ModTest.Templates"
+    / "content"
+)
 
 
 def parse_installed_versions(output):
@@ -242,13 +250,16 @@ def replace_once(text, pattern, replacement, label):
     return updated
 
 
-def replace_identity(text, project_name, machine_identifier, title, author):
+def replace_identity(
+    text, project_name, machine_identifier, title, author, additional_values=None
+):
     values = {
         "@PROJECT_NAME@": project_name,
         "@MACHINE_IDENTIFIER@": machine_identifier,
         "@TITLE@": title,
         "@AUTHOR@": author,
     }
+    values.update(additional_values or {})
     return re.sub(
         "|".join(re.escape(token) for token in values),
         lambda match: values[match.group(0)],
@@ -292,7 +303,60 @@ def copy_overlay_files(project_dir, project_name, machine_identifier, title, aut
     project.rename(target_tests / f"{project_name}.Tests.csproj")
 
 
-def create_solution(dotnet, project_dir, project_name):
+def copy_test_mod_files(project_dir, project_name, machine_identifier, title, author):
+    test_mod_name = f"{project_name}.TestMod"
+    test_mod_dir = project_dir / test_mod_name
+    if not TEST_MOD_TEMPLATE_SOURCE.is_dir():
+        raise RuntimeError(
+            f"The Verification Mod template is missing: {TEST_MOD_TEMPLATE_SOURCE}"
+        )
+    if test_mod_dir.exists():
+        raise RuntimeError(f"The generated Verification Mod path is occupied: {test_mod_dir}")
+    test_mod_dir.mkdir()
+
+    target_project_path = Path(
+        os.path.relpath(project_dir / f"{project_name}.csproj", test_mod_dir)
+    ).as_posix()
+    additional_values = {
+        "Blasphemous1.ModTest": test_mod_name,
+        "MOD_TITLE_PLACEHOLDER": json.dumps(title, ensure_ascii=False),
+        "MOD_AUTHOR_PLACEHOLDER": json.dumps(author, ensure_ascii=False),
+        "TARGET_PROJECT_PLACEHOLDER": escape_xml(target_project_path),
+    }
+    for source in TEST_MOD_TEMPLATE_SOURCE.iterdir():
+        if source.is_file() and source.suffix in (".cs", ".csproj"):
+            target_name = source.name.replace("Blasphemous1.ModTest", test_mod_name)
+            target = test_mod_dir / target_name
+            text = source.read_text(encoding="utf-8-sig")
+            target.write_text(
+                replace_identity(
+                    text,
+                    project_name,
+                    machine_identifier,
+                    title,
+                    author,
+                    additional_values,
+                ),
+                encoding="utf-8",
+            )
+
+    props_source = TEST_MOD_TEMPLATE_SOURCE / "Optional" / "TargetProjectReference.props"
+    if not props_source.is_file():
+        raise RuntimeError(f"The Verification Mod reference template is missing: {props_source}")
+    props_text = props_source.read_text(encoding="utf-8-sig")
+    props_text = replace_identity(
+        props_text,
+        project_name,
+        machine_identifier,
+        title,
+        author,
+        additional_values,
+    )
+    (test_mod_dir / props_source.name).write_text(props_text, encoding="utf-8")
+    return test_mod_dir / f"{test_mod_name}.csproj"
+
+
+def create_solution(dotnet, project_dir, project_name, test_mod_project=None):
     solution = project_dir / f"{project_name}.sln"
     created = run(
         [
@@ -312,16 +376,13 @@ def create_solution(dotnet, project_dir, project_name):
             "dotnet new sln failed.\n" + created.stdout + created.stderr
         )
 
-    added = run(
-        [
-            dotnet,
-            "sln",
-            str(solution),
-            "add",
-            str(project_dir / f"{project_name}.csproj"),
-            str(project_dir / f"{project_name}.Tests" / f"{project_name}.Tests.csproj"),
-        ]
-    )
+    projects = [
+        project_dir / f"{project_name}.csproj",
+        project_dir / f"{project_name}.Tests" / f"{project_name}.Tests.csproj",
+    ]
+    if test_mod_project is not None:
+        projects.append(test_mod_project)
+    added = run([dotnet, "sln", str(solution), "add", *(str(path) for path in projects)])
     if added.returncode != 0:
         raise RuntimeError("dotnet sln add failed.\n" + added.stdout + added.stderr)
     if not solution.is_file():
@@ -329,7 +390,9 @@ def create_solution(dotnet, project_dir, project_name):
     return solution
 
 
-def validate_generated(project_dir, machine_identifier, game_version):
+def validate_generated(
+    project_dir, machine_identifier, game_version, with_test_mod=False
+):
     project_name = f"Blasphemous.{machine_identifier}"
     project = project_dir / f"{project_name}.csproj"
     main = project_dir / "Main.cs"
@@ -338,6 +401,9 @@ def validate_generated(project_dir, machine_identifier, game_version):
     test_project = test_dir / f"{project_name}.Tests.csproj"
     test_source = test_dir / "ModMetadataTests.cs"
     solution = project_dir / f"{project_name}.sln"
+    test_mod_name = f"{project_name}.TestMod"
+    test_mod_dir = project_dir / test_mod_name
+    test_mod_project = test_mod_dir / f"{test_mod_name}.csproj"
     required = (
         project,
         main,
@@ -403,6 +469,49 @@ def validate_generated(project_dir, machine_identifier, game_version):
     ):
         raise RuntimeError("The generated solution is missing the test project.")
 
+    if with_test_mod:
+        if not test_mod_project.is_file():
+            raise RuntimeError("The generated Verification Mod project is missing.")
+        if not (test_mod_dir / "Main.cs").is_file():
+            raise RuntimeError("The generated Verification Mod entry point is missing.")
+        if not (test_mod_dir / "ModInfo.cs").is_file():
+            raise RuntimeError("The generated Verification Mod metadata is missing.")
+        props_file = test_mod_dir / "TargetProjectReference.props"
+        if not props_file.is_file():
+            raise RuntimeError("The generated Verification Mod project reference is missing.")
+        test_mod_solution_entry = (
+            f'"{test_mod_name}", "{test_mod_name}\\{test_mod_name}.csproj"'
+        )
+        if (
+            test_mod_solution_entry not in solution_text
+            and test_mod_solution_entry.replace("\\", "/") not in solution_text
+        ):
+            raise RuntimeError("The generated solution is missing the Verification Mod.")
+        compile_removes = [
+            item.attrib.get("Remove", "")
+            for item in root.findall(".//Compile")
+        ]
+        if f"{test_mod_name}/**/*.cs" not in compile_removes:
+            raise RuntimeError(
+                "The main Mod project does not exclude Verification Mod source files."
+            )
+        props_root = ET.parse(props_file).getroot()
+        target_path = props_root.findtext("./PropertyGroup/TargetProjectPath")
+        references = props_root.findall(".//ProjectReference")
+        if (
+            not target_path
+            or not (test_mod_dir / target_path).is_file()
+            or not any(
+                item.attrib.get("Include") == "$(TargetProjectPath)"
+                for item in references
+            )
+        ):
+            raise RuntimeError(
+                "The Verification Mod does not reference the generated Mod project."
+            )
+    elif test_mod_dir.exists():
+        raise RuntimeError("A Verification Mod was generated without the opt-in switch.")
+
     main_text = main.read_text(encoding="utf-8-sig")
     if (
         f'BepInDependency("Blasphemous.ModdingAPI", "{MODDING_API_VERSION}")'
@@ -449,7 +558,9 @@ def validate_generated(project_dir, machine_identifier, game_version):
                 )
 
 
-def apply_overlay(project_dir, machine_identifier, game_version, title, author, dotnet):
+def apply_overlay(
+    project_dir, machine_identifier, game_version, title, author, dotnet, with_test_mod=False
+):
     project_name = f"Blasphemous.{machine_identifier}"
     project = project_dir / f"{project_name}.csproj"
     main = project_dir / "Main.cs"
@@ -499,8 +610,13 @@ def apply_overlay(project_dir, machine_identifier, game_version, title, author, 
             f'    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" '
             f'Version="{REFERENCE_ASSEMBLIES_VERSION}" PrivateAssets="all" />\n'
             f'    <Compile Remove="{project_name}.Tests/**/*.cs" />\n'
-            "  </ItemGroup>\n\n"
-            "</Project>"
+            + (
+                f'    <Compile Remove="{project_name}.TestMod/**/*.cs" />\n'
+                if with_test_mod
+                else ""
+            )
+            + "  </ItemGroup>\n\n"
+            + "</Project>"
         ),
         "test source exclusion",
     )
@@ -536,8 +652,15 @@ def apply_overlay(project_dir, machine_identifier, game_version, title, author, 
     copy_overlay_files(
         project_dir, project_name, machine_identifier, title, author
     )
-    create_solution(dotnet, project_dir, project_name)
-    validate_generated(project_dir, machine_identifier, game_version)
+    test_mod_project = None
+    if with_test_mod:
+        test_mod_project = copy_test_mod_files(
+            project_dir, project_name, machine_identifier, title, author
+        )
+    create_solution(dotnet, project_dir, project_name, test_mod_project)
+    validate_generated(
+        project_dir, machine_identifier, game_version, with_test_mod
+    )
 
 
 def build_parser():
@@ -563,13 +686,6 @@ def main(argv=None):
         output = validate_output_path(args.output)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
-        return 2
-
-    if args.with_test_mod:
-        print(
-            "error: --with-test-mod is not available yet; generate the base Mod first.",
-            file=sys.stderr,
-        )
         return 2
 
     dotnet = shutil.which("dotnet")
@@ -609,7 +725,15 @@ def main(argv=None):
             print(generated.stderr, file=sys.stderr, end="")
             raise RuntimeError("dotnet new blas1mod failed.")
 
-        apply_overlay(staging, args.name, game_version, title, author, dotnet)
+        apply_overlay(
+            staging,
+            args.name,
+            game_version,
+            title,
+            author,
+            dotnet,
+            args.with_test_mod,
+        )
 
         if os.path.lexists(output):
             raise RuntimeError(f"Output path appeared during generation: {output}")

@@ -417,8 +417,12 @@ class WrapperTests(unittest.TestCase):
             names = archive.namelist()
         self.assertIn("plugins/Buildable.dll", names)
         self.assertFalse(any(".Tests" in name for name in names))
+        self.assertFalse((output / "Blasphemous.Buildable.TestMod").exists())
 
-    def test_unavailable_verification_mod_fails_without_output(self):
+    def test_with_test_mod_generates_and_packages_separate_plugin(self):
+        import zipfile
+
+        self.install_official_template()
         output = self.root / "Blasphemous.WithTest"
         result = self.run_wrapper(
             "--name",
@@ -432,10 +436,95 @@ class WrapperTests(unittest.TestCase):
             "--with-test-mod",
         )
 
-        self.assertEqual(result.returncode, 2)
-        self.assertFalse(output.exists())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_generation_does_not_touch_surrounding_git_metadata(self):
+        project_name = "Blasphemous.WithTest"
+        test_mod_name = f"{project_name}.TestMod"
+        test_mod_dir = output / test_mod_name
+        test_mod_project = test_mod_dir / f"{test_mod_name}.csproj"
+        test_mod_props = test_mod_dir / "TargetProjectReference.props"
+        solution_text = (output / f"{project_name}.sln").read_text(
+            encoding="utf-8"
+        )
+        main_project_text = (output / f"{project_name}.csproj").read_text(
+            encoding="utf-8"
+        )
+        self.assertTrue(test_mod_project.is_file())
+        self.assertTrue((test_mod_dir / "Main.cs").is_file())
+        self.assertTrue((test_mod_dir / "ModInfo.cs").is_file())
+        self.assertTrue(test_mod_props.is_file())
+        self.assertFalse((test_mod_dir / ".template.config").exists())
+        test_mod_info = (test_mod_dir / "ModInfo.cs").read_text(encoding="utf-8")
+        self.assertIn('internal const string ModName = "With Test Mod";', test_mod_info)
+        self.assertIn('internal const string ModAuthor = "Test Author";', test_mod_info)
+        self.assertIn(
+            f'"{test_mod_name}", "{test_mod_name}\\{test_mod_name}.csproj"',
+            solution_text,
+        )
+        self.assertIn(f"<Compile Remove=\"{test_mod_name}/**/*.cs\" />", main_project_text)
+        self.assertIn("../Blasphemous.WithTest.csproj", test_mod_props.read_text(encoding="utf-8"))
+
+        solution = output / f"{project_name}.sln"
+        restored = subprocess.run(
+            ["dotnet", "restore", str(solution)],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(restored.returncode, 0, restored.stdout + restored.stderr)
+        built = subprocess.run(
+            ["dotnet", "build", str(solution), "--no-restore"],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+
+        main_package = output / "publish" / "WithTest.zip"
+        test_mod_package = test_mod_dir / "publish" / f"{test_mod_name}.zip"
+        with zipfile.ZipFile(main_package) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {".gitkeep", "plugins/WithTest.dll"},
+            )
+        with zipfile.ZipFile(test_mod_package) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {
+                    f"plugins/{test_mod_name}.dll",
+                    "plugins/WithTest.dll",
+                },
+            )
+
+        main_dll = output / "bin" / "Debug" / "WithTest.dll"
+        self.assertNotIn(b"Blasphemous.WithTest.TestMod", main_dll.read_bytes())
+        nuget_output = output / "main-nuget"
+        packed = subprocess.run(
+            [
+                "dotnet",
+                "pack",
+                str(output / f"{project_name}.csproj"),
+                "--configuration",
+                "Debug",
+                "--output",
+                str(nuget_output),
+            ],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(packed.returncode, 0, packed.stdout + packed.stderr)
+        main_nupkg = next(nuget_output.glob("*.nupkg"))
+        with zipfile.ZipFile(main_nupkg) as archive:
+            self.assertFalse(any("TestMod" in name for name in archive.namelist()))
+
+    def test_with_test_mod_generation_does_not_touch_surrounding_git_metadata(self):
         self.install_official_template()
         self.root.joinpath(".git").mkdir()
         marker = self.root / ".git" / "marker"
@@ -451,6 +540,7 @@ class WrapperTests(unittest.TestCase):
             "Test Author",
             "--output",
             str(output),
+            "--with-test-mod",
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

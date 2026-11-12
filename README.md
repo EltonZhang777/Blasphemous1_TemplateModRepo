@@ -15,6 +15,11 @@ The product is specified in [Issue #1](https://github.com/EltonZhang777/Blasphem
 
 The official template remains the canonical source of the base Mod project. This repository does not distribute a fork or cloneable snapshot of it.
 
+Pass `--with-test-mod` to `tools/new_blas1mod.py` to add a Verification Mod
+project that references the generated Mod. Its ZIP contains both assemblies
+under `plugins/`; the switch is opt-in, and the Verification Mod stays out of
+the main Mod's release ZIP and NuGet package.
+
 ## Standalone verification Mod template
 
 The package is built from `Templates/Blasphemous1.ModTest.Templates`:
