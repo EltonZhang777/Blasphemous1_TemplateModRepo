@@ -109,7 +109,36 @@ RESERVED_DEVICE_NAMES = {
 }
 
 COLLIDING_PROJECT_NAMES = {"Main", "ModInfo", "ModTemplate", "TemplateMod"}
+RESERVED_DISPLAY_TEXT = {
+    "Mod Creator",
+    "Mod Template",
+    "Template Author",
+    "Template Mod",
+    "TemplateMod",
+    "ModTemplate",
+}
+IDENTITY_TOKENS = (
+    "@PROJECT_NAME@",
+    "@MACHINE_IDENTIFIER@",
+    "@TITLE@",
+    "@AUTHOR@",
+)
 OVERLAY_ROOT = Path(__file__).resolve().parent.parent / "TemplateRepo"
+OVERLAY_FILES = (
+    "README.md",
+    "AGENTS.md",
+    ".editorconfig",
+    ".gitignore",
+    ".worktreeinclude",
+    "NuGet.Config",
+    "dotnet_format.bat",
+    ".config/wt.toml",
+    "docs/agents/domain.md",
+    "docs/agents/issue-tracker.md",
+    "docs/agents/triage-labels.md",
+    "resources/.gitkeep",
+)
+TEST_PROJECT_SOURCE = "Blasphemous.Template.Tests"
 
 
 def parse_installed_versions(output):
@@ -117,7 +146,7 @@ def parse_installed_versions(output):
     lines = output.splitlines()
     versions = []
     for index, line in enumerate(lines):
-        if REQUIRED_TEMPLATE not in line:
+        if line.strip() != REQUIRED_TEMPLATE:
             continue
         for detail in lines[index + 1 : index + 8]:
             match = re.search(r"\bVersion:\s*([^\s]+)", detail)
@@ -148,11 +177,18 @@ def validate_display_text(value, label):
     if not 1 <= len(value) <= 80:
         raise ValueError(f"{label} must be between 1 and 80 characters after trimming.")
     if any(
-        character in "\r\n\t&<>"
+        character in "\r\n\t\u2028\u2029&<>\"\\"
         or unicodedata.category(character).startswith("C")
         for character in value
     ):
-        raise ValueError(f"{label} must not contain control characters or XML delimiters.")
+        raise ValueError(
+            f"{label} must not contain control characters, XML delimiters, "
+            "quotes, or backslashes."
+        )
+    if value in RESERVED_DISPLAY_TEXT:
+        raise ValueError(f"{label} must not reuse a template placeholder identity.")
+    if any(token in value for token in IDENTITY_TOKENS):
+        raise ValueError(f"{label} must not contain reserved overlay tokens.")
     return value
 
 
@@ -206,19 +242,115 @@ def replace_once(text, pattern, replacement, label):
     return updated
 
 
-def copy_overlay_files(project_dir):
+def replace_identity(text, project_name, machine_identifier, title, author):
+    values = {
+        "@PROJECT_NAME@": project_name,
+        "@MACHINE_IDENTIFIER@": machine_identifier,
+        "@TITLE@": title,
+        "@AUTHOR@": author,
+    }
+    return re.sub(
+        "|".join(re.escape(token) for token in values),
+        lambda match: values[match.group(0)],
+        text,
+    )
+
+
+def copy_overlay_files(project_dir, project_name, machine_identifier, title, author):
+    for relative in OVERLAY_FILES:
+        source = OVERLAY_ROOT / relative
+        if not source.is_file():
+            raise RuntimeError(f"The overlay file is missing: {source}")
+        target = project_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        text = source.read_text(encoding="utf-8-sig")
+        target.write_text(
+            replace_identity(text, project_name, machine_identifier, title, author),
+            encoding="utf-8",
+        )
+
     source = OVERLAY_ROOT / "PackageMod.targets"
     if not source.is_file():
         raise RuntimeError(f"The overlay file is missing: {source}")
     shutil.copy2(source, project_dir / source.name)
 
+    source_tests = OVERLAY_ROOT / TEST_PROJECT_SOURCE
+    target_tests = project_dir / f"{project_name}.Tests"
+    if not source_tests.is_dir():
+        raise RuntimeError(f"The overlay test project is missing: {source_tests}")
+    if target_tests.exists():
+        raise RuntimeError(f"The generated test project path is occupied: {target_tests}")
+    shutil.copytree(source_tests, target_tests)
+    for path in target_tests.rglob("*"):
+        if path.suffix in (".cs", ".csproj"):
+            text = path.read_text(encoding="utf-8-sig")
+            path.write_text(
+                replace_identity(text, project_name, machine_identifier, title, author),
+                encoding="utf-8",
+            )
+    project = target_tests / f"{TEST_PROJECT_SOURCE}.csproj"
+    project.rename(target_tests / f"{project_name}.Tests.csproj")
+
+
+def create_solution(dotnet, project_dir, project_name):
+    solution = project_dir / f"{project_name}.sln"
+    created = run(
+        [
+            dotnet,
+            "new",
+            "sln",
+            "--name",
+            project_name,
+            "--format",
+            "sln",
+            "--output",
+            str(project_dir),
+        ]
+    )
+    if created.returncode != 0:
+        raise RuntimeError(
+            "dotnet new sln failed.\n" + created.stdout + created.stderr
+        )
+
+    added = run(
+        [
+            dotnet,
+            "sln",
+            str(solution),
+            "add",
+            str(project_dir / f"{project_name}.csproj"),
+            str(project_dir / f"{project_name}.Tests" / f"{project_name}.Tests.csproj"),
+        ]
+    )
+    if added.returncode != 0:
+        raise RuntimeError("dotnet sln add failed.\n" + added.stdout + added.stderr)
+    if not solution.is_file():
+        raise RuntimeError("The generated solution file is missing.")
+    return solution
+
 
 def validate_generated(project_dir, machine_identifier, game_version):
-    project = project_dir / f"Blasphemous.{machine_identifier}.csproj"
+    project_name = f"Blasphemous.{machine_identifier}"
+    project = project_dir / f"{project_name}.csproj"
     main = project_dir / "Main.cs"
     targets = project_dir / "PackageMod.targets"
-    if not all(path.is_file() for path in (project, main, targets)):
-        raise RuntimeError("The generated overlay is incomplete.")
+    test_dir = project_dir / f"{project_name}.Tests"
+    test_project = test_dir / f"{project_name}.Tests.csproj"
+    test_source = test_dir / "ModMetadataTests.cs"
+    solution = project_dir / f"{project_name}.sln"
+    required = (
+        project,
+        main,
+        targets,
+        test_project,
+        test_source,
+        solution,
+        project_dir / "resources",
+        *(project_dir / relative for relative in OVERLAY_FILES),
+    )
+    missing = [str(path) for path in required if not path.exists()]
+    if missing:
+        raise RuntimeError("The generated overlay is incomplete: " + ", ".join(missing))
 
     root = ET.parse(project).getroot()
     property_group = root.find("PropertyGroup")
@@ -242,6 +374,35 @@ def validate_generated(project_dir, machine_identifier, game_version):
     if not any(item.endswith("PackageMod.targets") for item in imports):
         raise RuntimeError("The generated project is missing its package target.")
 
+    test_root = ET.parse(test_project).getroot()
+    test_property_group = test_root.find("PropertyGroup")
+    if (
+        test_property_group is None
+        or test_property_group.findtext("TargetFramework") != "net48"
+    ):
+        raise RuntimeError("The generated test project has an invalid target framework.")
+    if test_property_group.findtext("IsPackable") != "false":
+        raise RuntimeError("The generated test project is packable.")
+    test_references = [
+        item.attrib.get("Include", "") for item in test_root.findall(".//ProjectReference")
+    ]
+    if not any(
+        item.replace("\\", "/").endswith(f"../{project_name}.csproj")
+        for item in test_references
+    ):
+        raise RuntimeError("The generated test project does not reference the Mod.")
+
+    solution_text = solution.read_text(encoding="utf-8")
+    if f'"{project_name}", "{project_name}.csproj"' not in solution_text:
+        raise RuntimeError("The generated solution is missing the Mod project.")
+    test_relative = f"{project_name}.Tests\\{project_name}.Tests.csproj"
+    if (
+        f'"{project_name}.Tests", "{test_relative}"' not in solution_text
+        and f'"{project_name}.Tests", "{test_relative.replace(chr(92), "/")}"'
+        not in solution_text
+    ):
+        raise RuntimeError("The generated solution is missing the test project.")
+
     main_text = main.read_text(encoding="utf-8-sig")
     if (
         f'BepInDependency("Blasphemous.ModdingAPI", "{MODDING_API_VERSION}")'
@@ -249,16 +410,48 @@ def validate_generated(project_dir, machine_identifier, game_version):
     ):
         raise RuntimeError("The generated plugin has an invalid BepInDependency version.")
 
-    combined = project.read_text(encoding="utf-8") + main_text + targets.read_text(
-        encoding="utf-8"
-    )
-    for placeholder in ("Mod Template", "Mod Creator", "TemplateMod", "ModTemplate"):
-        if placeholder in combined:
-            raise RuntimeError(f"Template placeholder remains in generated output: {placeholder}")
+    test_text = test_source.read_text(encoding="utf-8-sig")
+    if f"typeof({project_name}.{machine_identifier})" not in test_text:
+        raise RuntimeError("The generated test does not reference the Mod type.")
+
+    text_files = [
+        path
+        for path in project_dir.rglob("*")
+        if path.is_file()
+        and (
+            path.suffix.lower()
+            in {
+                ".cs",
+                ".csproj",
+                ".sln",
+                ".md",
+                ".xml",
+                ".config",
+                ".toml",
+                ".bat",
+                ".targets",
+                ".props",
+                ".json",
+                ".yml",
+                ".yaml",
+            }
+            or path.name in {".editorconfig", ".gitignore", ".worktreeinclude"}
+        )
+    ]
+    placeholders = (*RESERVED_DISPLAY_TEXT, *IDENTITY_TOKENS)
+    for path in text_files:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        for placeholder in placeholders:
+            if placeholder in text:
+                raise RuntimeError(
+                    "Template placeholder remains in generated output: "
+                    f"{placeholder} in {path.relative_to(project_dir)}"
+                )
 
 
-def apply_overlay(project_dir, machine_identifier, game_version):
-    project = project_dir / f"Blasphemous.{machine_identifier}.csproj"
+def apply_overlay(project_dir, machine_identifier, game_version, title, author, dotnet):
+    project_name = f"Blasphemous.{machine_identifier}"
+    project = project_dir / f"{project_name}.csproj"
     main = project_dir / "Main.cs"
     if not project.is_file() or not main.is_file():
         raise RuntimeError("The official template output is missing its project files.")
@@ -305,10 +498,11 @@ def apply_overlay(project_dir, machine_identifier, game_version):
             "  <ItemGroup>\n"
             f'    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" '
             f'Version="{REFERENCE_ASSEMBLIES_VERSION}" PrivateAssets="all" />\n'
+            f'    <Compile Remove="{project_name}.Tests/**/*.cs" />\n'
             "  </ItemGroup>\n\n"
             "</Project>"
         ),
-        "reference assembly package",
+        "test source exclusion",
     )
 
     development_pattern = re.compile(
@@ -337,9 +531,12 @@ def apply_overlay(project_dir, machine_identifier, game_version):
         if placeholder in combined:
             raise RuntimeError(f"Template placeholder remains in generated output: {placeholder}")
 
-    copy_overlay_files(project_dir)
     project.write_text(project_text, encoding="utf-8")
     main.write_text(main_text, encoding="utf-8")
+    copy_overlay_files(
+        project_dir, project_name, machine_identifier, title, author
+    )
+    create_solution(dotnet, project_dir, project_name)
     validate_generated(project_dir, machine_identifier, game_version)
 
 
@@ -412,7 +609,7 @@ def main(argv=None):
             print(generated.stderr, file=sys.stderr, end="")
             raise RuntimeError("dotnet new blas1mod failed.")
 
-        apply_overlay(staging, args.name, game_version)
+        apply_overlay(staging, args.name, game_version, title, author, dotnet)
 
         if os.path.lexists(output):
             raise RuntimeError(f"Output path appeared during generation: {output}")

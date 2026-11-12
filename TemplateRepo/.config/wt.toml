@@ -1,0 +1,3 @@
+# Avoid copying build artifacts into new worktrees.
+[step.copy-ignored]
+exclude = ["bin/", "obj/", "publish/", "TestResults/"]

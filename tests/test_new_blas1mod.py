@@ -146,8 +146,18 @@ class WrapperTests(unittest.TestCase):
         cases = (
             ("--title", "", "Blasphemous.EmptyTitle"),
             ("--title", "Bad & Title", "Blasphemous.BadTitle"),
+            ("--title", 'Bad "Title"', "Blasphemous.BadQuoteTitle"),
+            ("--title", "Bad\\Title", "Blasphemous.BadBackslashTitle"),
+            ("--title", "@AUTHOR@", "Blasphemous.TokenTitle"),
+            ("--title", "Template Mod", "Blasphemous.ReservedTitle"),
+            ("--title", "Line\u2028Break", "Blasphemous.UnicodeSeparatorTitle"),
             ("--author", " ", "Blasphemous.EmptyAuthor"),
             ("--author", "Line\nBreak", "Blasphemous.LineBreak"),
+            ("--author", "Line\u2029Break", "Blasphemous.UnicodeSeparatorAuthor"),
+            ("--author", 'Bad "Author"', "Blasphemous.BadQuoteAuthor"),
+            ("--author", "Bad\\Author", "Blasphemous.BadBackslashAuthor"),
+            ("--author", "@TITLE@", "Blasphemous.TokenAuthor"),
+            ("--author", "Template Author", "Blasphemous.ReservedAuthor"),
         )
         for argument, value, output_name in cases:
             with self.subTest(argument=argument, value=value):
@@ -214,6 +224,27 @@ class WrapperTests(unittest.TestCase):
 
         self.assertNotIn("1.4.1", wrapper.parse_installed_versions(output))
 
+    def test_version_parser_ignores_uninstall_and_other_templates(self):
+        wrapper = load_wrapper_module()
+        output = (
+            "Currently installed items:\n"
+            "   Blasphemous.Modding.Templates\n"
+            "      Version: 1.4.1\n"
+            "      Templates:\n"
+            "         Blasphemous Mod (blas1mod) C#\n"
+            "      Uninstall Command:\n"
+            "         dotnet new uninstall Blasphemous.Modding.Templates\n"
+            "\n"
+            "   BepInEx.Templates\n"
+            "      Version: 2.0.0-be.4\n"
+            "      Details:\n"
+            "         Author: BepInEx\n"
+        )
+
+        self.assertEqual(
+            wrapper.parse_installed_versions(output), ["1.4.1"]
+        )
+
     def test_valid_generation_modernizes_identity_and_deployment(self):
         self.install_official_template()
         output = self.root / "Blasphemous.Example"
@@ -234,6 +265,24 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(project.is_file())
         self.assertTrue(main.is_file())
         self.assertTrue((output / "PackageMod.targets").is_file())
+        self.assertTrue((output / "Blasphemous.Example.sln").is_file())
+        self.assertTrue(
+            (output / "Blasphemous.Example.Tests" / "Blasphemous.Example.Tests.csproj").is_file()
+        )
+        self.assertTrue(
+            (output / "Blasphemous.Example.Tests" / "ModMetadataTests.cs").is_file()
+        )
+        self.assertTrue((output / "resources").is_dir())
+        self.assertTrue((output / "README.md").is_file())
+        self.assertTrue((output / "AGENTS.md").is_file())
+        self.assertTrue((output / ".editorconfig").is_file())
+        self.assertTrue((output / ".gitignore").is_file())
+        self.assertTrue((output / ".worktreeinclude").is_file())
+        self.assertTrue((output / "dotnet_format.bat").is_file())
+        self.assertTrue((output / ".config" / "wt.toml").is_file())
+        self.assertTrue((output / "docs" / "agents" / "domain.md").is_file())
+        self.assertTrue((output / "docs" / "agents" / "issue-tracker.md").is_file())
+        self.assertTrue((output / "docs" / "agents" / "triage-labels.md").is_file())
 
         project_text = project.read_text(encoding="utf-8")
         main_text = main.read_text(encoding="utf-8")
@@ -246,6 +295,52 @@ class WrapperTests(unittest.TestCase):
         self.assertNotIn("0.1.0", main_text)
         for placeholder in ("TemplateMod", "Template Mod", "Template Author"):
             self.assertNotIn(placeholder, project_text + main_text)
+
+        test_project_text = (
+            output / "Blasphemous.Example.Tests" / "Blasphemous.Example.Tests.csproj"
+        ).read_text(encoding="utf-8")
+        test_source = (output / "Blasphemous.Example.Tests" / "ModMetadataTests.cs").read_text(
+            encoding="utf-8"
+        )
+        solution_text = (output / "Blasphemous.Example.sln").read_text(encoding="utf-8")
+        self.assertIn("<TargetFramework>net48</TargetFramework>", test_project_text)
+        self.assertIn("<IsPackable>false</IsPackable>", test_project_text)
+        self.assertIn("Blasphemous.Example.csproj", test_project_text)
+        self.assertIn(
+            '"Blasphemous.Example", "Blasphemous.Example.csproj"', solution_text
+        )
+        self.assertIn(
+            '"Blasphemous.Example.Tests", "Blasphemous.Example.Tests\\Blasphemous.Example.Tests.csproj"',
+            solution_text,
+        )
+        self.assertIn("ModMetadataTests", test_source)
+        self.assertIn("typeof(Blasphemous.Example.Example)", test_source)
+        self.assertIn("dotnet test", (output / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "DeployToGame",
+            (output / "README.md").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "DeployToGame",
+            (output / "AGENTS.md").read_text(encoding="utf-8"),
+        )
+
+        for path in output.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix not in (".cs", ".csproj", ".sln", ".md", ".xml", ".config", ".toml", ".bat"):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for placeholder in (
+                "TemplateMod",
+                "Template Mod",
+                "Template Author",
+                "@PROJECT_NAME@",
+                "@MACHINE_IDENTIFIER@",
+                "@TITLE@",
+                "@AUTHOR@",
+            ):
+                self.assertNotIn(placeholder, text, str(path))
 
     def test_custom_game_version_is_applied(self):
         self.install_official_template()
@@ -285,8 +380,9 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         env = self.environment()
+        solution = output / "Blasphemous.Buildable.sln"
         restore = subprocess.run(
-            ["dotnet", "restore", str(output)],
+            ["dotnet", "restore", str(solution)],
             env=env,
             capture_output=True,
             text=True,
@@ -295,7 +391,7 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(restore.returncode, 0, restore.stdout + restore.stderr)
         build = subprocess.run(
-            ["dotnet", "build", str(output), "--no-restore"],
+            ["dotnet", "build", str(solution), "--no-restore"],
             env=env,
             capture_output=True,
             text=True,
@@ -303,6 +399,24 @@ class WrapperTests(unittest.TestCase):
             errors="replace",
         )
         self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+        test = subprocess.run(
+            ["dotnet", "test", str(solution), "--no-build"],
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(test.returncode, 0, test.stdout + test.stderr)
+
+        package = output / "publish" / "Buildable.zip"
+        self.assertTrue(package.is_file())
+        import zipfile
+
+        with zipfile.ZipFile(package) as archive:
+            names = archive.namelist()
+        self.assertIn("plugins/Buildable.dll", names)
+        self.assertFalse(any(".Tests" in name for name in names))
 
     def test_unavailable_verification_mod_fails_without_output(self):
         output = self.root / "Blasphemous.WithTest"
