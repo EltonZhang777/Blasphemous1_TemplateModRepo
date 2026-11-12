@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageType>Template</PackageType>
+    <PackageId>Blasphemous1.ModTest.Templates</PackageId>
+    <Version>0.1.0</Version>
+    <Title>Blasphemous 1 Mod Test Templates</Title>
+    <Authors>EltonZhang777</Authors>
+    <Description>Standalone dotnet template for a Blasphemous 1 verification Mod.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="content/**/*.cs" />
+    <None Remove="content/**/*" />
+    <Content Include="content/**/*" Pack="true" PackagePath="content/" />
+    <None Update="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

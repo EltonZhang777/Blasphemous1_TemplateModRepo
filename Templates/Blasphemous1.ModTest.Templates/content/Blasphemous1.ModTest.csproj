@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+
+    <Description>In-game verification Mod for Blasphemous 1.</Description>
+    <Version>0.1.0</Version>
+
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+
+    <PackageStagingFolder>$(MSBuildProjectDirectory)\obj\package\$(AssemblyName)-$([System.Guid]::NewGuid().ToString("N"))</PackageStagingFolder>
+    <PackageFile>$(MSBuildProjectDirectory)\publish\$(AssemblyName).zip</PackageFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Blasphemous.GameLibs" Version="4.0.67" />
+    <PackageReference Include="Blasphemous.ModdingAPI" Version="3.0.1" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Import Project="TargetProjectReference.props" Condition="Exists('TargetProjectReference.props')" />
+
+  <Target Name="ValidateTargetProject" BeforeTargets="PrepareForBuild" Condition="'$(TargetProjectPath)' != ''">
+    <Error Condition="!Exists('$(TargetProjectPath)')" Text="Target project not found: $(TargetProjectPath)" />
+  </Target>
+
+  <Target Name="PackageVerificationMod" AfterTargets="Build">
+    <MSBuild Projects="@(ProjectReference)" Targets="GetTargetPath" Condition="'$(TargetProjectPath)' != ''">
+      <Output TaskParameter="TargetOutputs" ItemName="TargetProjectAssemblies" />
+    </MSBuild>
+    <ItemGroup>
+      <PluginAssemblies Include="$(TargetPath)" />
+      <PluginAssemblies Include="@(TargetProjectAssemblies)" />
+    </ItemGroup>
+    <MakeDir Directories="$(PackageStagingFolder)\plugins" />
+    <Copy SourceFiles="@(PluginAssemblies)" DestinationFolder="$(PackageStagingFolder)\plugins" SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(MSBuildProjectDirectory)\publish" />
+    <ZipDirectory SourceDirectory="$(PackageStagingFolder)" DestinationFile="$(PackageFile)" Overwrite="true" />
+  </Target>
+
+</Project>
