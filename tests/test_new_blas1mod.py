@@ -21,6 +21,12 @@ DEFAULT_PACKAGE = (
     / "Blasphemous.Modding.Templates.1.4.1.nupkg"
 )
 PACKAGE = Path(os.environ.get("BLAS1_TEMPLATE_PACKAGE", DEFAULT_PACKAGE))
+WRONG_PACKAGE = Path(
+    os.environ.get(
+        "BLAS1_WRONG_TEMPLATE_PACKAGE",
+        DEFAULT_PACKAGE.with_name("Blasphemous.Modding.Templates.1.4.0.nupkg"),
+    )
+)
 
 
 def load_wrapper_module():
@@ -60,11 +66,11 @@ class WrapperTests(unittest.TestCase):
             errors="replace",
         )
 
-    def install_official_template(self):
+    def install_template_package(self, package):
         self.assertEqual(platform.system(), "Windows")
         self.assertTrue(
-            PACKAGE.is_file(),
-            "Set BLAS1_TEMPLATE_PACKAGE to the official 1.4.1 template package",
+            package.is_file(),
+            f"Template package not found: {package}",
         )
         version = subprocess.run(
             ["dotnet", "--version"],
@@ -77,7 +83,7 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(version.returncode, 0, version.stdout + version.stderr)
         self.assertEqual(version.stdout.strip().split(".")[0], "10")
         result = subprocess.run(
-            ["dotnet", "new", "install", str(PACKAGE)],
+            ["dotnet", "new", "install", str(package)],
             env=self.environment(),
             capture_output=True,
             text=True,
@@ -86,6 +92,9 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def install_official_template(self):
+        self.install_template_package(PACKAGE)
+
     def test_missing_template_fails_before_output_creation(self):
         output = self.root / "Blasphemous.Missing"
         result = self.run_wrapper(
@@ -93,6 +102,28 @@ class WrapperTests(unittest.TestCase):
             "Missing",
             "--title",
             "Missing Mod",
+            "--author",
+            "Test Author",
+            "--output",
+            str(output),
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(output.exists())
+        self.assertIn("Blasphemous.Modding.Templates::1.4.1", result.stdout)
+
+    def test_real_wrong_template_version_fails_before_output_creation(self):
+        if not WRONG_PACKAGE.is_file():
+            raise unittest.SkipTest(
+                "Set BLAS1_WRONG_TEMPLATE_PACKAGE to an official 1.4.0 template package"
+            )
+        self.install_template_package(WRONG_PACKAGE)
+        output = self.root / "Blasphemous.WrongVersion"
+        result = self.run_wrapper(
+            "--name",
+            "WrongVersion",
+            "--title",
+            "Wrong Version Mod",
             "--author",
             "Test Author",
             "--output",
@@ -856,6 +887,33 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(marker.read_text(encoding="utf-8"), "untouched")
         self.assertFalse((output / ".git").exists())
+
+        plain_root = Path(tempfile.mkdtemp(prefix="blas1-no-git-"))
+        plain_output = plain_root / "Blasphemous.NoGit"
+        plain = self.run_wrapper(
+            "--name",
+            "NoGit",
+            "--title",
+            "No Git Mod",
+            "--author",
+            "Test Author",
+            "--output",
+            str(plain_output),
+            "--with-test-mod",
+        )
+        self.assertEqual(plain.returncode, 0, plain.stdout + plain.stderr)
+        self.assertFalse((plain_output / ".git").exists())
+        git_files = sorted(
+            str(path.relative_to(output))
+            for path in output.rglob("*")
+            if path.is_file()
+        )
+        plain_files = sorted(
+            str(path.relative_to(plain_output))
+            for path in plain_output.rglob("*")
+            if path.is_file()
+        )
+        self.assertEqual(git_files, plain_files)
 
 
 if __name__ == "__main__":

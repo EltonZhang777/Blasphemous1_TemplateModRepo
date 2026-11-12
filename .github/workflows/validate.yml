@@ -1,0 +1,60 @@
+name: Validate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.9
+
+      - name: Install official template packages
+        run: |
+          $official = Join-Path $env:RUNNER_TEMP "Blasphemous.Modding.Templates.1.4.1.nupkg"
+          $wrong = Join-Path $env:RUNNER_TEMP "Blasphemous.Modding.Templates.1.4.0.nupkg"
+          Invoke-WebRequest `
+            "https://api.nuget.org/v3-flatcontainer/blasphemous.modding.templates/1.4.1/blasphemous.modding.templates.1.4.1.nupkg" `
+            -OutFile $official
+          Invoke-WebRequest `
+            "https://api.nuget.org/v3-flatcontainer/blasphemous.modding.templates/1.4.0/blasphemous.modding.templates.1.4.0.nupkg" `
+            -OutFile $wrong
+
+          $hive = Join-Path $env:RUNNER_TEMP "official-template-hive"
+          New-Item -ItemType Directory -Force -Path $hive | Out-Null
+          $env:DOTNET_CLI_HOME = $hive
+          dotnet new install $official
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not install the official template.'
+          }
+          $inventory = (& dotnet new uninstall) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or $inventory -notmatch 'Version:\s+1\.4\.1') {
+            throw 'The isolated hive is not using the official 1.4.1 template.'
+          }
+
+          "BLAS1_TEMPLATE_PACKAGE=$official" >> $env:GITHUB_ENV
+          "BLAS1_WRONG_TEMPLATE_PACKAGE=$wrong" >> $env:GITHUB_ENV
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
