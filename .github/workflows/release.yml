@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags: ["**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+
+  publish:
+    needs: validate
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NUGET_USERNAME: ${{ secrets.NUGET_USERNAME }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate SemVer tag
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $pattern = '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+          if ($tag -cnotmatch $pattern) {
+            throw "Invalid release tag '$tag'."
+          }
+
+          git fetch --no-tags origin main
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not fetch main.'
+          }
+          git merge-base --is-ancestor HEAD FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release tag '$tag' is not an ancestor of main."
+          }
+
+          "PACKAGE_VERSION=$($tag -creplace '^v', '')" >> $env:GITHUB_ENV
+
+      - name: Pack template package
+        run: |
+          $output = Join-Path $PWD "artifacts"
+          dotnet pack Templates/Blasphemous1.ModTest.Templates/Blasphemous1.ModTest.Templates.csproj `
+            --configuration Release `
+            --output $output `
+            -p:PackageVersion=$env:PACKAGE_VERSION
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not pack the template package.'
+          }
+
+          $packages = @(Get-ChildItem -LiteralPath $output -Filter *.nupkg -File)
+          if ($packages.Count -ne 1) {
+            throw "Expected one template package, found $($packages.Count)."
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($packages[0].FullName)
+          try {
+            $entry = $archive.Entries |
+              Where-Object { $_.FullName -like '*.nuspec' } |
+              Select-Object -First 1
+            if (-not $entry) {
+              throw 'The template package has no nuspec.'
+            }
+            $reader = [System.IO.StreamReader]::new($entry.Open())
+            try {
+              [xml]$nuspec = $reader.ReadToEnd()
+            }
+            finally {
+              $reader.Dispose()
+            }
+          }
+          finally {
+            $archive.Dispose()
+          }
+
+          if ($nuspec.package.metadata.id -ne 'Blasphemous1.ModTest.Templates') {
+            throw 'The template package identity is incorrect.'
+          }
+          if ($nuspec.package.metadata.version -ne $env:PACKAGE_VERSION) {
+            throw 'The template package version does not match the release tag.'
+          }
+
+          "NUPKG_FILE=$($packages[0].FullName)" >> $env:GITHUB_ENV
+
+      - name: Warn when NuGet username is missing
+        if: env.NUGET_USERNAME == ''
+        run: Write-Warning 'NUGET_USERNAME is not configured; skipping template publication.'
+
+      - name: NuGet login
+        if: env.NUGET_USERNAME != ''
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USERNAME }}
+
+      - name: Publish template package
+        if: env.NUGET_USERNAME != ''
+        run: |
+          dotnet nuget push "$env:NUPKG_FILE" `
+            --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" `
+            --source https://api.nuget.org/v3/index.json
