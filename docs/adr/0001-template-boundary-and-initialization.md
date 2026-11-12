@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0003](0003-non-vendored-official-template-overlay.md).
+
+The cloneable-template boundary, manifest, and custom initializer described below are no longer active.
 
 ## Context
 
