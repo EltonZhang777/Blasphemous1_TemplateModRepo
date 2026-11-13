@@ -23,6 +23,8 @@ DEFAULT_PACKAGE = (
     / "Blasphemous.Modding.Templates.1.4.1.nupkg"
 )
 PACKAGE = Path(os.environ.get("BLAS1_TEMPLATE_PACKAGE", DEFAULT_PACKAGE))
+# Only 4.0.67 is published; metadata keeps the override distinct and restorable.
+CUSTOM_GAME_VERSION = "4.0.67+tests"
 WRONG_PACKAGE = Path(
     os.environ.get(
         "BLAS1_WRONG_TEMPLATE_PACKAGE",
@@ -482,14 +484,16 @@ class WrapperTests(unittest.TestCase):
             "--output",
             str(output),
             "--game-version",
-            "4.0.68",
+            CUSTOM_GAME_VERSION,
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         project_text = (output / "Blasphemous.Versioned.csproj").read_text(
             encoding="utf-8"
         )
-        self.assertIn('Blasphemous.GameLibs" Version="4.0.68"', project_text)
+        self.assertIn(
+            f'Blasphemous.GameLibs" Version="{CUSTOM_GAME_VERSION}"', project_text
+        )
 
     def test_generated_mod_restores_and_builds(self):
         self.install_official_template()
@@ -763,6 +767,14 @@ class WrapperTests(unittest.TestCase):
             "--with-test-mod",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        test_mod_project_text = (
+            output
+            / "Blasphemous.TestMod.TestMod"
+            / "Blasphemous.TestMod.TestMod.csproj"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'Blasphemous.GameLibs" Version="4.0.67"', test_mod_project_text
+        )
 
         solution = output / "Blasphemous.TestMod.sln"
         built = subprocess.run(
@@ -812,6 +824,8 @@ class WrapperTests(unittest.TestCase):
             "--output",
             str(output),
             "--with-test-mod",
+            "--game-version",
+            CUSTOM_GAME_VERSION,
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -827,6 +841,7 @@ class WrapperTests(unittest.TestCase):
         main_project_text = (output / f"{project_name}.csproj").read_text(
             encoding="utf-8"
         )
+        test_mod_project_text = test_mod_project.read_text(encoding="utf-8")
         self.assertTrue(test_mod_project.is_file())
         self.assertTrue((test_mod_dir / "Main.cs").is_file())
         self.assertTrue((test_mod_dir / "ModInfo.cs").is_file())
@@ -846,6 +861,14 @@ class WrapperTests(unittest.TestCase):
             solution_text,
         )
         self.assertIn(f"<Compile Remove=\"{test_mod_name}/**/*.cs\" />", main_project_text)
+        self.assertIn(
+            f'Blasphemous.GameLibs" Version="{CUSTOM_GAME_VERSION}"',
+            main_project_text,
+        )
+        self.assertIn(
+            f'Blasphemous.GameLibs" Version="{CUSTOM_GAME_VERSION}"',
+            test_mod_project_text,
+        )
         self.assertIn("../Blasphemous.WithTest.csproj", test_mod_props.read_text(encoding="utf-8"))
 
         solution = output / f"{project_name}.sln"

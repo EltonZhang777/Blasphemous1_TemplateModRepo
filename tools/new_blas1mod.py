@@ -282,6 +282,15 @@ def replace_once(text, pattern, replacement, label):
     return updated
 
 
+def replace_game_libs_version(text, game_version):
+    return replace_once(
+        text,
+        r'(<PackageReference Include="Blasphemous\.GameLibs" Version=")[^"]+(")',
+        lambda match: f"{match.group(1)}{game_version}{match.group(2)}",
+        "GameLibs version",
+    )
+
+
 def csharp_string(value):
     return json.dumps(value, ensure_ascii=False)
 
@@ -357,7 +366,9 @@ def copy_overlay_files(project_dir, project_name, machine_identifier, title, aut
     project.rename(target_tests / f"{project_name}.Tests.csproj")
 
 
-def copy_test_mod_files(project_dir, project_name, machine_identifier, title, author):
+def copy_test_mod_files(
+    project_dir, project_name, machine_identifier, title, author, game_version
+):
     test_mod_name = f"{project_name}.TestMod"
     test_mod_dir = project_dir / test_mod_name
     if not TEST_MOD_TEMPLATE_SOURCE.is_dir():
@@ -382,15 +393,18 @@ def copy_test_mod_files(project_dir, project_name, machine_identifier, title, au
             target_name = source.name.replace("Blasphemous1.ModTest", test_mod_name)
             target = test_mod_dir / target_name
             text = source.read_text(encoding="utf-8-sig")
+            text = replace_identity(
+                text,
+                project_name,
+                machine_identifier,
+                title,
+                author,
+                additional_values,
+            )
+            if source.suffix == ".csproj":
+                text = replace_game_libs_version(text, game_version)
             target.write_text(
-                replace_identity(
-                    text,
-                    project_name,
-                    machine_identifier,
-                    title,
-                    author,
-                    additional_values,
-                ),
+                text,
                 encoding="utf-8",
             )
 
@@ -571,6 +585,15 @@ def validate_generated(
             raise RuntimeError(
                 "The Verification Mod does not reference the generated Mod project."
             )
+        test_mod_root = ET.parse(test_mod_project).getroot()
+        test_mod_packages = {
+            item.attrib.get("Include"): item.attrib.get("Version")
+            for item in test_mod_root.findall(".//PackageReference")
+        }
+        if test_mod_packages.get("Blasphemous.GameLibs") != game_version:
+            raise RuntimeError(
+                "The Verification Mod has an invalid GameLibs version."
+            )
     elif test_mod_dir.exists():
         raise RuntimeError("A Verification Mod was generated without the opt-in switch.")
 
@@ -646,12 +669,7 @@ def apply_overlay(
         lambda match: f"{match.group(1)}{MODDING_API_VERSION}{match.group(2)}",
         "ModdingAPI version",
     )
-    project_text = replace_once(
-        project_text,
-        r'(<PackageReference Include="Blasphemous\.GameLibs" Version=")[^"]+(")',
-        lambda match: f"{match.group(1)}{game_version}{match.group(2)}",
-        "GameLibs version",
-    )
+    project_text = replace_game_libs_version(project_text, game_version)
     project_text = replace_once(
         project_text,
         r"<TargetName>[^<]*</TargetName>",
@@ -737,7 +755,12 @@ def apply_overlay(
     test_mod_project = None
     if with_test_mod:
         test_mod_project = copy_test_mod_files(
-            project_dir, project_name, machine_identifier, title, author
+            project_dir,
+            project_name,
+            machine_identifier,
+            title,
+            author,
+            game_version,
         )
     for source in project_dir.rglob("*.cs"):
         source.write_text(source.read_text(encoding="utf-8-sig"), encoding="utf-8")

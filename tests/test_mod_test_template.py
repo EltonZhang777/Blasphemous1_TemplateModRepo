@@ -130,6 +130,7 @@ class ModTestTemplateTests(unittest.TestCase):
 
         project_text = project.read_text(encoding="utf-8")
         self.assertIn("<TargetFramework>net35</TargetFramework>", project_text)
+        self.assertIn('Blasphemous.GameLibs" Version="4.0.67"', project_text)
         self.assertNotIn("<ProjectReference", project_text)
         self.assertIn("<IsPackable>false</IsPackable>", project_text)
         mod_info = (output / "ModInfo.cs").read_text(encoding="utf-8")
