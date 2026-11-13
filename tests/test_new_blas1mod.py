@@ -1,10 +1,12 @@
 import importlib.util
+import json
 import os
 import platform
 import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -155,7 +157,16 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("Blasphemous.Modding.Templates::1.4.1", output.getvalue())
 
     def test_invalid_identity_is_rejected_before_output_creation(self):
-        invalid_names = ("x", "1Mod", "CON", "ModTemplate", "Main", "ModInfo")
+        self.install_official_template()
+        invalid_names = (
+            "x",
+            "1Mod",
+            "CON",
+            "ModTemplate",
+            "TemplateMod",
+            "Main",
+            "ModInfo",
+        )
         for name in invalid_names:
             with self.subTest(name=name):
                 output = self.root / f"Blasphemous.{name}"
@@ -174,21 +185,33 @@ class WrapperTests(unittest.TestCase):
                 self.assertFalse(output.exists())
 
     def test_invalid_text_and_output_paths_are_rejected_before_creation(self):
+        self.install_official_template()
         cases = (
             ("--title", "", "Blasphemous.EmptyTitle"),
-            ("--title", "Bad & Title", "Blasphemous.BadTitle"),
-            ("--title", 'Bad "Title"', "Blasphemous.BadQuoteTitle"),
-            ("--title", "Bad\\Title", "Blasphemous.BadBackslashTitle"),
             ("--title", "@AUTHOR@", "Blasphemous.TokenTitle"),
             ("--title", "Template Mod", "Blasphemous.ReservedTitle"),
+            ("--title", "MOD_TITLE_PLACEHOLDER", "Blasphemous.TemplateTitleToken"),
+            ("--title", "TARGET_PROJECT_PLACEHOLDER", "Blasphemous.TargetToken"),
+            ("--title", "Blasphemous1.ModTest", "Blasphemous.TemplateIdentity"),
+            ("--title", "$(Version)", "Blasphemous.PropertyTitle"),
+            ("--title", "A%0AB", "Blasphemous.PercentTitle"),
+            ("--title", "Bidi\u202eText", "Blasphemous.BidiTitle"),
+            ("--title", "A\uFFFE B", "Blasphemous.NoncharacterTitle"),
+            ("--title", "\u200d", "Blasphemous.InvisibleTitle"),
             ("--title", "Line\u2028Break", "Blasphemous.UnicodeSeparatorTitle"),
+            ("--title", "Trailing\n", "Blasphemous.TrailingLineBreakTitle"),
             ("--author", " ", "Blasphemous.EmptyAuthor"),
             ("--author", "Line\nBreak", "Blasphemous.LineBreak"),
             ("--author", "Line\u2029Break", "Blasphemous.UnicodeSeparatorAuthor"),
-            ("--author", 'Bad "Author"', "Blasphemous.BadQuoteAuthor"),
-            ("--author", "Bad\\Author", "Blasphemous.BadBackslashAuthor"),
+            ("--author", "\tLeading", "Blasphemous.LeadingTabAuthor"),
+            ("--author", "A%09B", "Blasphemous.PercentAuthor"),
+            ("--author", "Bidi\u2066Text", "Blasphemous.BidiAuthor"),
+            ("--author", "A\uFFFF B", "Blasphemous.NoncharacterAuthor"),
+            ("--author", "\u200c", "Blasphemous.InvisibleAuthor"),
             ("--author", "@TITLE@", "Blasphemous.TokenAuthor"),
             ("--author", "Template Author", "Blasphemous.ReservedAuthor"),
+            ("--author", "MOD_AUTHOR_PLACEHOLDER", "Blasphemous.TemplateAuthorToken"),
+            ("--author", "$(Version)", "Blasphemous.PropertyAuthor"),
         )
         for argument, value, output_name in cases:
             with self.subTest(argument=argument, value=value):
@@ -224,6 +247,14 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertFalse(output.exists())
+
+    def test_display_text_accepts_unicode_joiners_and_combining_marks(self):
+        wrapper = load_wrapper_module()
+        for value in ("می\u200cخواهم", "👩\u200d💻", "Cafe\u0301"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    value, wrapper.validate_display_text(value, "Display Title")
+                )
 
     def test_existing_output_is_refused_without_modification(self):
         output = self.root / "Blasphemous.Existing"
@@ -283,7 +314,7 @@ class WrapperTests(unittest.TestCase):
             "--name",
             "Example",
             "--title",
-            "Example Mod",
+            "My Mod Template",
             "--author",
             "Example Author",
             "--output",
@@ -463,17 +494,54 @@ class WrapperTests(unittest.TestCase):
     def test_generated_mod_restores_and_builds(self):
         self.install_official_template()
         output = self.root / "Blasphemous.Buildable"
+        title = 'A; </Product><Copyright>X</Copyright><Product>B & <T> "Q" \\ E'
+        author = 'T </Authors><Company>Injected</Company><Authors> & "Author" \\ Team'
         result = self.run_wrapper(
             "--name",
             "Buildable",
             "--title",
-            "Buildable Mod",
+            title,
             "--author",
-            "Test Author",
+            author,
             "--output",
             str(output),
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        project_text = (output / "Blasphemous.Buildable.csproj").read_text(
+            encoding="utf-8"
+        )
+        project_xml = ET.fromstring(project_text)
+        for element_name, expected in (
+            ("Title", title),
+            ("Product", title),
+            ("Authors", author),
+            ("Company", author),
+        ):
+            self.assertEqual(
+                [expected],
+                [element.text for element in project_xml.iter(element_name)],
+            )
+        self.assertNotIn("<Copyright>Injected</Copyright>", project_text)
+        self.assertNotIn("<Company>Injected</Company>", project_text)
+        self.assertIn(
+            'public const string MOD_VERSION = "$(Version)"%3B',
+            project_text,
+        )
+        self.assertNotIn('MOD_NAME = "$(Product)"', project_text)
+        mod_info_text = (output / "ModInfo.cs").read_text(encoding="utf-8")
+        self.assertIn(
+            f"public const string MOD_NAME = {json.dumps(title, ensure_ascii=False)};",
+            mod_info_text,
+        )
+        self.assertIn(
+            f"public const string MOD_AUTHOR = {json.dumps(author, ensure_ascii=False)};",
+            mod_info_text,
+        )
+        test_text = (output / "Blasphemous.Buildable.Tests" / "ModMetadataTests.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(json.dumps(title, ensure_ascii=False), test_text)
+        self.assertIn(json.dumps(author, ensure_ascii=False), test_text)
 
         env = self.environment()
         solution = output / "Blasphemous.Buildable.sln"
@@ -732,13 +800,15 @@ class WrapperTests(unittest.TestCase):
 
         self.install_official_template()
         output = self.root / "Blasphemous.WithTest"
+        title = '验证; </Product> & "Q" \\'
+        author = '作者 </Authors> & "A" \\ Team'
         result = self.run_wrapper(
             "--name",
             "WithTest",
             "--title",
-            "With Test Mod",
+            title,
             "--author",
-            "Test Author",
+            author,
             "--output",
             str(output),
             "--with-test-mod",
@@ -763,8 +833,14 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(test_mod_props.is_file())
         self.assertFalse((test_mod_dir / ".template.config").exists())
         test_mod_info = (test_mod_dir / "ModInfo.cs").read_text(encoding="utf-8")
-        self.assertIn('internal const string ModName = "With Test Mod";', test_mod_info)
-        self.assertIn('internal const string ModAuthor = "Test Author";', test_mod_info)
+        self.assertIn(
+            f"internal const string ModName = {json.dumps(title, ensure_ascii=False)};",
+            test_mod_info,
+        )
+        self.assertIn(
+            f"internal const string ModAuthor = {json.dumps(author, ensure_ascii=False)};",
+            test_mod_info,
+        )
         self.assertIn(
             f'"{test_mod_name}", "{test_mod_name}\\{test_mod_name}.csproj"',
             solution_text,

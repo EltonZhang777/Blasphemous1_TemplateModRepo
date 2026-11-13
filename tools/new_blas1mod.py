@@ -20,6 +20,8 @@ REQUIRED_VERSION = "1.4.1"
 MODDING_API_VERSION = "3.0.1"
 DEFAULT_GAME_VERSION = "4.0.67"
 REFERENCE_ASSEMBLIES_VERSION = "1.0.3"
+DISPLAY_TITLE_SENTINEL = "__BLASPHEMOUS_DISPLAY_TITLE__"
+AUTHOR_SENTINEL = "__BLASPHEMOUS_AUTHOR__"
 
 CSHARP_KEYWORDS = {
     "abstract",
@@ -123,12 +125,28 @@ IDENTITY_TOKENS = (
     "@PROJECT_NAME@",
     "@MACHINE_IDENTIFIER@",
     "@TITLE@",
+    "@TITLE_CSHARP@",
     "@AUTHOR@",
+    "@AUTHOR_CSHARP@",
+    "MOD_TITLE_PLACEHOLDER",
+    "MOD_AUTHOR_PLACEHOLDER",
+    "TARGET_PROJECT_PLACEHOLDER",
+    "Blasphemous1.ModTest",
+    DISPLAY_TITLE_SENTINEL,
+    AUTHOR_SENTINEL,
 )
+BIDI_CONTROLS = {
+    "\u061c",
+    "\u200e",
+    "\u200f",
+    *(chr(code) for code in range(0x202A, 0x202F)),
+    *(chr(code) for code in range(0x2066, 0x206A)),
+}
 OVERLAY_ROOT = Path(__file__).resolve().parent.parent / "TemplateRepo"
 OVERLAY_FILES = (
     "README.md",
     "AGENTS.md",
+    "ModInfo.cs",
     ".editorconfig",
     ".gitattributes",
     ".gitignore",
@@ -186,18 +204,27 @@ def validate_machine_identifier(value):
 
 
 def validate_display_text(value, label):
-    value = value.strip()
-    if not 1 <= len(value) <= 80:
-        raise ValueError(f"{label} must be between 1 and 80 characters after trimming.")
     if any(
-        character in "\r\n\t\u2028\u2029&<>\"\\"
-        or unicodedata.category(character).startswith("C")
+        unicodedata.category(character) in {"Cc", "Cs"}
+        or character in BIDI_CONTROLS
+        or character in "\u2028\u2029"
+        or 0xFDD0 <= ord(character) <= 0xFDEF
+        or (ord(character) & 0xFFFF) in {0xFFFE, 0xFFFF}
         for character in value
     ):
         raise ValueError(
-            f"{label} must not contain control characters, XML delimiters, "
-            "quotes, or backslashes."
+            f"{label} must not contain control characters, line breaks, "
+            "or invalid Unicode."
         )
+    value = value.strip()
+    if not 1 <= len(value) <= 80:
+        raise ValueError(f"{label} must be between 1 and 80 characters after trimming.")
+    if not any(unicodedata.category(character)[0] in "LNPS" for character in value):
+        raise ValueError(f"{label} must contain printable characters.")
+    if re.search(r"%[0-9A-Fa-f]{2}", value):
+        raise ValueError(f"{label} must not contain MSBuild escape sequences.")
+    if "$(" in value:
+        raise ValueError(f"{label} must not contain MSBuild property expansion.")
     if value in RESERVED_DISPLAY_TEXT:
         raise ValueError(f"{label} must not reuse a template placeholder identity.")
     if any(token in value for token in IDENTITY_TOKENS):
@@ -255,6 +282,10 @@ def replace_once(text, pattern, replacement, label):
     return updated
 
 
+def csharp_string(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
 def replace_identity(
     text, project_name, machine_identifier, title, author, additional_values=None
 ):
@@ -273,6 +304,10 @@ def replace_identity(
 
 
 def copy_overlay_files(project_dir, project_name, machine_identifier, title, author):
+    additional_values = {
+        "@TITLE_CSHARP@": csharp_string(title),
+        "@AUTHOR_CSHARP@": csharp_string(author),
+    }
     for relative in OVERLAY_FILES:
         source = OVERLAY_ROOT / relative
         if not source.is_file():
@@ -281,7 +316,14 @@ def copy_overlay_files(project_dir, project_name, machine_identifier, title, aut
         target.parent.mkdir(parents=True, exist_ok=True)
         text = source.read_text(encoding="utf-8-sig")
         target.write_text(
-            replace_identity(text, project_name, machine_identifier, title, author),
+            replace_identity(
+                text,
+                project_name,
+                machine_identifier,
+                title,
+                author,
+                additional_values,
+            ),
             encoding="utf-8",
         )
 
@@ -301,7 +343,14 @@ def copy_overlay_files(project_dir, project_name, machine_identifier, title, aut
         if path.suffix in (".cs", ".csproj"):
             text = path.read_text(encoding="utf-8-sig")
             path.write_text(
-                replace_identity(text, project_name, machine_identifier, title, author),
+                replace_identity(
+                    text,
+                    project_name,
+                    machine_identifier,
+                    title,
+                    author,
+                    additional_values,
+                ),
                 encoding="utf-8",
             )
     project = target_tests / f"{TEST_PROJECT_SOURCE}.csproj"
@@ -324,8 +373,8 @@ def copy_test_mod_files(project_dir, project_name, machine_identifier, title, au
     ).as_posix()
     additional_values = {
         "Blasphemous1.ModTest": test_mod_name,
-        "MOD_TITLE_PLACEHOLDER": json.dumps(title, ensure_ascii=False),
-        "MOD_AUTHOR_PLACEHOLDER": json.dumps(author, ensure_ascii=False),
+        "MOD_TITLE_PLACEHOLDER": csharp_string(title),
+        "MOD_AUTHOR_PLACEHOLDER": csharp_string(author),
         "TARGET_PROJECT_PLACEHOLDER": escape_xml(target_project_path),
     }
     for source in TEST_MOD_TEMPLATE_SOURCE.iterdir():
@@ -396,7 +445,7 @@ def create_solution(dotnet, project_dir, project_name, test_mod_project=None):
 
 
 def validate_generated(
-    project_dir, machine_identifier, game_version, with_test_mod=False
+    project_dir, machine_identifier, game_version, title, author, with_test_mod=False
 ):
     project_name = f"Blasphemous.{machine_identifier}"
     project = project_dir / f"{project_name}.csproj"
@@ -429,6 +478,14 @@ def validate_generated(
         raise RuntimeError("The generated project has an invalid TargetName.")
     if property_group.findtext("DeployToGame") != "false":
         raise RuntimeError("Game deployment is not disabled by default.")
+    for element_name, expected in (
+        ("Title", title),
+        ("Product", title),
+        ("Authors", author),
+        ("Company", author),
+    ):
+        if property_group.findtext(element_name) != expected:
+            raise RuntimeError(f"The generated project has an invalid {element_name}.")
 
     packages = {
         item.attrib.get("Include"): item.attrib.get("Version")
@@ -553,7 +610,8 @@ def validate_generated(
             or path.name in {".editorconfig", ".gitignore", ".worktreeinclude"}
         )
     ]
-    placeholders = (*RESERVED_DISPLAY_TEXT, *IDENTITY_TOKENS)
+    # Reserved defaults may legitimately occur inside user-provided display text.
+    placeholders = IDENTITY_TOKENS
     for path in text_files:
         text = path.read_text(encoding="utf-8-sig", errors="replace")
         for placeholder in placeholders:
@@ -574,6 +632,14 @@ def apply_overlay(
         raise RuntimeError("The official template output is missing its project files.")
 
     project_text = project.read_text(encoding="utf-8-sig")
+    project_text = project_text.replace(
+        DISPLAY_TITLE_SENTINEL,
+        escape_xml(title, {'"': "&quot;", "'": "&apos;"}),
+    )
+    project_text = project_text.replace(
+        AUTHOR_SENTINEL,
+        escape_xml(author, {'"': "&quot;", "'": "&apos;"}),
+    )
     project_text = replace_once(
         project_text,
         r'(<PackageReference Include="Blasphemous\.ModdingAPI" Version=")[^"]+(")',
@@ -639,6 +705,21 @@ def apply_overlay(
         ),
         "development target",
     )
+    generated_mod_info_pattern = re.compile(
+        r'(?s)(<Target Name="AddGeneratedFile".*?<GeneratedText>\s*<!\[CDATA\[).*?'
+        r'(\]\]>\s*</GeneratedText>)'
+    )
+    project_text = replace_once(
+        project_text,
+        generated_mod_info_pattern,
+        lambda match: (
+            match.group(1)
+            + "\n namespace $(RootNamespace) { internal static partial class ModInfo "
+            + '{ public const string MOD_VERSION = "$(Version)"%3B } }\n '
+            + match.group(2)
+        ),
+        "generated ModInfo version",
+    )
 
     main_text = main.read_text(encoding="utf-8-sig")
     main_text = replace_once(
@@ -647,11 +728,6 @@ def apply_overlay(
         lambda match: f"{match.group(1)}{MODDING_API_VERSION}{match.group(2)}",
         "BepInDependency version",
     )
-
-    combined = project_text + main_text
-    for placeholder in ("Mod Template", "Mod Creator", "TemplateMod", "ModTemplate"):
-        if placeholder in combined:
-            raise RuntimeError(f"Template placeholder remains in generated output: {placeholder}")
 
     project.write_text(project_text, encoding="utf-8")
     main.write_text(main_text, encoding="utf-8")
@@ -667,7 +743,7 @@ def apply_overlay(
         source.write_text(source.read_text(encoding="utf-8-sig"), encoding="utf-8")
     create_solution(dotnet, project_dir, project_name, test_mod_project)
     validate_generated(
-        project_dir, machine_identifier, game_version, with_test_mod
+        project_dir, machine_identifier, game_version, title, author, with_test_mod
     )
 
 
@@ -721,9 +797,9 @@ def main(argv=None):
                 "-n",
                 f"Blasphemous.{args.name}",
                 "-m",
-                title,
+                DISPLAY_TITLE_SENTINEL,
                 "-au",
-                author,
+                AUTHOR_SENTINEL,
                 "-o",
                 str(staging),
             ]
