@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from workflow_contract import workflow_step
+from workflow_contract import assert_nuget_release_guards, workflow_step
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -379,11 +379,7 @@ class WrapperTests(unittest.TestCase):
         self.assertIn('tags: ["**"]', release_workflow)
         self.assertIn("contents: write", release_workflow)
         self.assertIn("id-token: write", release_workflow)
-        self.assertIn("NuGet/login@v1", release_workflow)
         self.assertIn("NUGET_USERNAME", release_workflow)
-        self.assertIn("if: env.NUGET_USERNAME == ''", release_workflow)
-        self.assertIn("Write-Warning", release_workflow)
-        self.assertIn("if: env.NUGET_USERNAME != ''", release_workflow)
         self.assertNotIn("continue-on-error", release_workflow)
         self.assertNotIn("secrets.NUGET_API_KEY", release_workflow)
         self.assertIn("git merge-base --is-ancestor", release_workflow)
@@ -422,8 +418,7 @@ class WrapperTests(unittest.TestCase):
             draft_step.index("gh release upload"),
             draft_step.rindex("if ($LASTEXITCODE -ne 0)"),
         )
-        nuget_step = workflow_step(release_workflow, "Publish NuGet package")
-        self.assertIn("dotnet nuget push", nuget_step)
+        nuget_step = assert_nuget_release_guards(release_workflow)
         self.assertIn("--skip-duplicate", nuget_step)
         self.assertIn('Join-Path $PWD "publish" "$targetName.zip"', release_workflow)
         self.assertNotIn("*$targetName.zip", release_workflow)

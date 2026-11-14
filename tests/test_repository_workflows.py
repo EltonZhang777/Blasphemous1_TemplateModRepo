@@ -2,7 +2,7 @@ import re
 import unittest
 from pathlib import Path
 
-from workflow_contract import workflow_step
+from workflow_contract import assert_nuget_release_guards
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -62,14 +62,11 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("Blasphemous1.ModTest.Templates.csproj", workflow)
         self.assertIn("-p:PackageVersion=$env:PACKAGE_VERSION", workflow)
         self.assertIn("Blasphemous1.ModTest.Templates", workflow)
-        self.assertIn("NuGet/login@v1", workflow)
         self.assertIn("NUGET_USERNAME", workflow)
-        self.assertEqual(workflow.count("if: env.NUGET_USERNAME == ''"), 1)
-        self.assertIn("Write-Warning", workflow)
-        self.assertEqual(workflow.count("if: env.NUGET_USERNAME != ''"), 2)
-        self.assertIn("steps.nuget_login.outputs.NUGET_API_KEY", workflow)
-        publish_step = workflow_step(workflow, "Publish template package")
-        self.assertIn("dotnet nuget push", publish_step)
+
+        publish_step = assert_nuget_release_guards(
+            workflow, "Publish template package"
+        )
         self.assertIn("--skip-duplicate", publish_step)
         self.assertNotIn("continue-on-error", workflow)
         self.assertNotIn("secrets.NUGET_API_KEY", workflow)
