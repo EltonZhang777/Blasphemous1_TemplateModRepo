@@ -44,6 +44,32 @@ _Avoid_: automated test project, test fixture
 The `blasModTest` dotnet template distributed as `Blasphemous1.ModTest.Templates`.
 _Avoid_: template repository, overlay
 
+### Test Environment Safety
+
+**PATH Contamination**:
+Persistent PATH entries that point at disposable test or tool directories and remain after their owners are gone.
+_Avoid_: PATH bloat, environment pollution
+
+**Test Hive**:
+A disposable .NET CLI home used by a template test instead of the maintainer's normal dotnet home.
+_Avoid_: temporary home, wrapper home
+
+**Disposable Test Context**:
+A Windows user, sandbox, CI runner, or VM whose environment and files are discarded after the run.
+_Avoid_: clean machine, isolated folder
+
+**Persistent PATH**:
+The User or Machine Path value stored for future processes, as distinct from a process-local PATH.
+_Avoid_: process PATH, shell PATH
+
+**PATH Snapshot**:
+The raw User and Machine Path values captured before and after a test context to detect persistent mutation.
+_Avoid_: PATH backup, environment dump
+
+**Consumer Entry Point**:
+The Generator Command or Test Template Package used by Mod authors, as distinct from the meta-repository test harness.
+_Avoid_: setup CLI, installer
+
 **Mod Package**:
 The release ZIP whose `plugins/<TargetName>.dll` file is the Mod entry assembly.
 _Avoid_: release, bundle
