@@ -15,7 +15,7 @@ class RepositoryWorkflowTests(unittest.TestCase):
         workflow = VALIDATE_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("pull_request:", workflow)
-        self.assertIn("branches: [main]", workflow)
+        self.assertIn("branches: [main, test-ci]", workflow)
         self.assertIn("push:", workflow)
         self.assertIn("workflow_call:", workflow)
         self.assertIn("contents: read", workflow)
