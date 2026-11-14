@@ -6,41 +6,78 @@ A non-vendored repository generator for Blasphemous 1 Mod development.
 
 The product is specified in [Issue #1](https://github.com/EltonZhang777/Blasphemous1_TemplateModRepo/issues/1).
 
-## Planned delivery
+## Setup
 
-- A Generator Command that wraps the official `blas1mod` template, pins `Blasphemous.Modding.Templates` `1.4.1`, and applies repository-owned tooling.
-- `TemplateRepo/` as the Overlay Root containing automated tests, agent documentation, project CI, and development configuration.
-- An opt-in Verification Mod for Mods and libraries that expose public APIs to other Mods.
-- A standalone `blasModTest` dotnet template, `Blasphemous1.ModTest.Templates`, for existing repositories.
+Install the exact official template baseline:
 
-The official template remains the canonical source of the base Mod project. This repository does not distribute a fork or cloneable snapshot of it.
+```powershell
+dotnet new install Blasphemous.Modding.Templates::1.4.1
+```
 
-Pass `--with-test-mod` to `tools/new_blas1mod.py` to add a Verification Mod
-project that references the generated Mod. Its ZIP contains both assemblies
-under `plugins/`; the switch is opt-in, and the Verification Mod stays out of
-the main Mod's release ZIP and NuGet package.
+Generate a Mod repository with the wrapper:
+
+```powershell
+python tools/new_blas1mod.py `
+  --name Example `
+  --title "Example Mod" `
+  --author "Example Author" `
+  --output C:\path\to\Blasphemous.Example
+```
+
+The wrapper verifies the exact Official Template Baseline, applies the Overlay,
+and creates the output only after generation and validation succeed. It does
+not install or update templates and refuses an existing output path.
+
+Add `--with-test-mod` to generate the opt-in Verification Mod:
+
+```powershell
+python tools/new_blas1mod.py `
+  --name Example `
+  --title "Example Mod" `
+  --author "Example Author" `
+  --output C:\path\to\Blasphemous.Example `
+  --with-test-mod
+```
+
+The Verification Mod is a separate `net35` project. Its ZIP contains both
+assemblies under `plugins/`; it remains outside the main Mod's release ZIP and
+NuGet package. `--game-version` defaults to `4.0.67` and propagates to both
+projects.
 
 Generated repositories validate pull requests and `main` pushes on Windows with
 .NET 10. A SemVer tag reachable from `main` creates a draft release containing
-only the main Mod ZIP and can publish its NuGet package with OIDC.
+only the main Mod ZIP. If configured, the Mod package is published to NuGet
+through trusted publishing; missing credentials warn and skip only that
+external action.
 
 ## Standalone verification Mod template
 
-The package is built from `Templates/Blasphemous1.ModTest.Templates`:
+Build and install the package from this template repository:
 
 ```powershell
-dotnet pack .\Templates\Blasphemous1.ModTest.Templates\Blasphemous1.ModTest.Templates.csproj
+dotnet pack .\Templates\Blasphemous1.ModTest.Templates\Blasphemous1.ModTest.Templates.csproj --configuration Release
 dotnet new install .\Templates\Blasphemous1.ModTest.Templates\bin\Release\Blasphemous1.ModTest.Templates.0.1.0.nupkg
+```
 
+Run the template from the existing Mod or class-library repository:
+
+```powershell
+Set-Location C:\path\to\existing-repo
+$targetProject = 'C:\path\to\target\Target.csproj'
 dotnet new blasmodtest -n Blasphemous.Example.TestMod `
-  --title "Example Mod Test" `
+  -o .\Blasphemous.Example.TestMod `
+  -ti "Example Mod Test" `
   -au "Example Author" `
-  --targetProject ..\Blasphemous.Example\Blasphemous.Example.csproj
+  -ta $targetProject
 
 dotnet sln add .\Blasphemous.Example.TestMod\Blasphemous.Example.TestMod.csproj
 ```
 
-`--targetProject` is optional. The generated project does not modify a solution; add it manually. See the [template README](Templates/Blasphemous1.ModTest.Templates/README.md) for package output and target-path behavior.
+`-ta` is optional. The package is `Blasphemous1.ModTest.Templates`, the short
+name is `blasmodtest`, and the current package version is `0.1.0`. The
+generated project does not modify a solution; add it manually. See the
+[template README](Templates/Blasphemous1.ModTest.Templates/README.md) for
+target-path behavior.
 
 ## Documentation
 
