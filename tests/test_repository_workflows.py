@@ -24,6 +24,12 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("windows-latest", workflow)
         self.assertIn("dotnet-version: 10.0.x", workflow)
         self.assertIn("python-version: 3.9", workflow)
+        self.assertIn('BLAS1_DISPOSABLE_TEST_CONTEXT: "1"', workflow)
+        self.assertIn("Check PATH isolation preflight", workflow)
+        self.assertLess(
+            workflow.index("Check PATH isolation preflight"),
+            workflow.index("Install official template packages"),
+        )
         self.assertIn("official-template-hive", workflow)
         self.assertIn("dotnet new install $official", workflow)
         self.assertIn("Blasphemous.Modding.Templates.1.4.1.nupkg", workflow)

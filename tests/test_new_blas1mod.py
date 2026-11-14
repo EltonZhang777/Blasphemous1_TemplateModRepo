@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from path_safety import disposable_dotnet_test
 from workflow_contract import assert_nuget_release_guards, workflow_step
 
 
@@ -99,6 +100,7 @@ class WrapperTests(unittest.TestCase):
     def install_official_template(self):
         self.install_template_package(PACKAGE)
 
+    @disposable_dotnet_test
     def test_missing_template_fails_before_output_creation(self):
         output = self.root / "Blasphemous.Missing"
         result = self.run_wrapper(
@@ -116,6 +118,7 @@ class WrapperTests(unittest.TestCase):
         self.assertFalse(output.exists())
         self.assertIn("Blasphemous.Modding.Templates::1.4.1", result.stdout)
 
+    @disposable_dotnet_test
     def test_real_wrong_template_version_fails_before_output_creation(self):
         if not WRONG_PACKAGE.is_file():
             raise unittest.SkipTest(
@@ -158,6 +161,7 @@ class WrapperTests(unittest.TestCase):
         self.assertFalse(accepted)
         self.assertIn("Blasphemous.Modding.Templates::1.4.1", output.getvalue())
 
+    @disposable_dotnet_test
     def test_invalid_identity_is_rejected_before_output_creation(self):
         self.install_official_template()
         invalid_names = (
@@ -186,6 +190,7 @@ class WrapperTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertFalse(output.exists())
 
+    @disposable_dotnet_test
     def test_invalid_text_and_output_paths_are_rejected_before_creation(self):
         self.install_official_template()
         cases = (
@@ -309,6 +314,7 @@ class WrapperTests(unittest.TestCase):
             wrapper.parse_installed_versions(output), ["1.4.1"]
         )
 
+    @disposable_dotnet_test
     def test_valid_generation_modernizes_identity_and_deployment(self):
         self.install_official_template()
         output = self.root / "Blasphemous.Example"
@@ -506,6 +512,7 @@ class WrapperTests(unittest.TestCase):
             ):
                 self.assertNotIn(placeholder, text, str(path))
 
+    @disposable_dotnet_test
     def test_custom_game_version_is_applied(self):
         self.install_official_template()
         output = self.root / "Blasphemous.Versioned"
@@ -530,6 +537,7 @@ class WrapperTests(unittest.TestCase):
             f'Blasphemous.GameLibs" Version="{CUSTOM_GAME_VERSION}"', project_text
         )
 
+    @disposable_dotnet_test
     def test_generated_mod_restores_and_builds(self):
         self.install_official_template()
         output = self.root / "Blasphemous.Buildable"
@@ -704,6 +712,7 @@ class WrapperTests(unittest.TestCase):
         self.assertFalse(any(".Tests" in name for name in names))
         self.assertFalse((output / "Blasphemous.Buildable.TestMod").exists())
 
+    @disposable_dotnet_test
     def test_generated_crlf_gate_rejects_lf_sources(self):
         import shutil
 
@@ -785,6 +794,7 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(rejected.returncode, 1)
         self.assertIn("Main.cs", rejected.stdout + rejected.stderr)
 
+    @disposable_dotnet_test
     def test_main_release_zip_is_exact_when_name_ends_with_testmod(self):
         import zipfile
 
@@ -842,6 +852,7 @@ class WrapperTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('Join-Path $PWD "publish" "$targetName.zip"', release_workflow)
 
+    @disposable_dotnet_test
     def test_with_test_mod_generates_and_packages_separate_plugin(self):
         import zipfile
 
@@ -999,6 +1010,7 @@ class WrapperTests(unittest.TestCase):
         with zipfile.ZipFile(main_nupkg) as archive:
             self.assertFalse(any("TestMod" in name for name in archive.namelist()))
 
+    @disposable_dotnet_test
     def test_with_test_mod_generation_does_not_touch_surrounding_git_metadata(self):
         self.install_official_template()
         self.root.joinpath(".git").mkdir()

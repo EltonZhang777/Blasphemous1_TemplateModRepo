@@ -17,6 +17,8 @@ defaults:
 jobs:
   validate:
     runs-on: windows-latest
+    env:
+      BLAS1_DISPOSABLE_TEST_CONTEXT: "1"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -30,6 +32,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.9
+
+      - name: Check PATH isolation preflight
+        run: |
+          $user = (Get-ItemProperty 'HKCU:\Environment' -Name Path).Path
+          $machine = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -Name Path).Path
+          $entries = @(
+            @($user, $machine) |
+              ForEach-Object { $_ -split ';' } |
+              Where-Object {
+                $_ -match '\\.wt\\issue-1-[^\\]+\\tmp\\[^;]*\\hive\\.dotnet\\tools'
+              }
+          )
+          if ($entries.Count -ne 0) {
+            throw "The disposable runner already contains $($entries.Count) repository test-hive PATH entries."
+          }
 
       - name: Install official template packages
         run: |

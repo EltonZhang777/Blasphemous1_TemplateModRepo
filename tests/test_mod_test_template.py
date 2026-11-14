@@ -7,6 +7,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from path_safety import DotnetTestContext
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_PROJECT = (
@@ -47,26 +49,38 @@ class ModTestTemplateTests(unittest.TestCase):
             }
         )
 
-        packed = cls.run_dotnet(
-            [
-                "pack",
-                str(TEMPLATE_PROJECT),
-                "--configuration",
-                "Release",
-                "--output",
-                str(cls.packages),
-            ],
-            REPO_ROOT,
-        )
-        if packed.returncode != 0:
-            raise AssertionError(packed.stdout + packed.stderr)
-        cls.package = next(
-            cls.packages.glob("Blasphemous1.ModTest.Templates.*.nupkg")
-        )
-        installed = cls.run_dotnet(["new", "install", str(cls.package)], cls.root)
-        if installed.returncode != 0:
-            raise AssertionError(installed.stdout + installed.stderr)
-        cls.install_output = installed.stdout + installed.stderr
+        cls.path_context = DotnetTestContext(cls.hive)
+        cls.path_context.start()
+        try:
+            packed = cls.run_dotnet(
+                [
+                    "pack",
+                    str(TEMPLATE_PROJECT),
+                    "--configuration",
+                    "Release",
+                    "--output",
+                    str(cls.packages),
+                ],
+                REPO_ROOT,
+            )
+            if packed.returncode != 0:
+                raise AssertionError(packed.stdout + packed.stderr)
+            cls.package = next(
+                cls.packages.glob("Blasphemous1.ModTest.Templates.*.nupkg")
+            )
+            installed = cls.run_dotnet(
+                ["new", "install", str(cls.package)], cls.root
+            )
+            if installed.returncode != 0:
+                raise AssertionError(installed.stdout + installed.stderr)
+            cls.install_output = installed.stdout + installed.stderr
+        except BaseException:
+            cls.path_context.finish()
+            raise
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.path_context.finish()
 
     @classmethod
     def run_dotnet(cls, arguments, cwd):
@@ -240,6 +254,8 @@ public static class TargetApi
         self.assertNotEqual(built.returncode, 0)
         self.assertIn("Target project not found", built.stdout + built.stderr)
 
+
+class ModTestTemplateDocumentationTests(unittest.TestCase):
     def test_documentation_shows_manual_solution_wiring(self):
         readme = TEMPLATE_README.read_text(encoding="utf-8")
         root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")

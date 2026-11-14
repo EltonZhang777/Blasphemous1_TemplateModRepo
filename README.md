@@ -79,6 +79,23 @@ generated project does not modify a solution; add it manually. See the
 [template README](Templates/Blasphemous1.ModTest.Templates/README.md) for
 target-path behavior.
 
+## Tests
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+On a normal Windows maintainer account, dotnet-backed template tests skip
+before the first `dotnet` invocation. `DOTNET_CLI_HOME` isolates template-engine
+state, but it is not a Windows-user isolation boundary. Run those tests only in
+a Disposable Test Context: an ephemeral CI runner, Windows Sandbox, or another
+disposable VM. Set `BLAS1_DISPOSABLE_TEST_CONTEXT=1` only inside that context.
+
+The test harness captures raw User and Machine `Path` values, reports known
+repository test-hive entries before execution, and allows disposable-context
+changes only when they append inside the declared Test Hive. It never repairs,
+normalizes, or deletes persistent PATH entries.
+
 ## Documentation
 
 - Domain vocabulary: [GLOSSARY.md](GLOSSARY.md)
