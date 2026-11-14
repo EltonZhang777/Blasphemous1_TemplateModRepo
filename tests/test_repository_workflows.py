@@ -2,6 +2,8 @@ import re
 import unittest
 from pathlib import Path
 
+from workflow_contract import workflow_step
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate.yml"
@@ -66,7 +68,9 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("Write-Warning", workflow)
         self.assertEqual(workflow.count("if: env.NUGET_USERNAME != ''"), 2)
         self.assertIn("steps.nuget_login.outputs.NUGET_API_KEY", workflow)
-        self.assertIn("dotnet nuget push", workflow)
+        publish_step = workflow_step(workflow, "Publish template package")
+        self.assertIn("dotnet nuget push", publish_step)
+        self.assertIn("--skip-duplicate", publish_step)
         self.assertNotIn("continue-on-error", workflow)
         self.assertNotIn("secrets.NUGET_API_KEY", workflow)
         self.assertNotIn("gh release", workflow)

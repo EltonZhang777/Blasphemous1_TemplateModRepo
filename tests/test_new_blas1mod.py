@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from workflow_contract import workflow_step
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = REPO_ROOT / "tools" / "new_blas1mod.py"
@@ -31,8 +33,6 @@ WRONG_PACKAGE = Path(
         DEFAULT_PACKAGE.with_name("Blasphemous.Modding.Templates.1.4.0.nupkg"),
     )
 )
-
-
 def load_wrapper_module():
     spec = importlib.util.spec_from_file_location("new_blas1mod", WRAPPER)
     module = importlib.util.module_from_spec(spec)
@@ -368,7 +368,9 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("dotnet-version: 10.0.x", build_workflow)
         self.assertIn("./scripts/check-crlf.ps1", build_workflow)
         self.assertIn("dotnet restore", build_workflow)
-        self.assertIn("dotnet build", build_workflow)
+        build_step = workflow_step(build_workflow, "Build")
+        self.assertIn("dotnet build", build_step)
+        self.assertIn("-p:DeployToGame=false", build_step)
         self.assertIn("dotnet test", build_workflow)
         self.assertIn("dotnet format whitespace", build_workflow)
         self.assertIn("--severity warn", build_workflow)
@@ -382,9 +384,47 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("if: env.NUGET_USERNAME == ''", release_workflow)
         self.assertIn("Write-Warning", release_workflow)
         self.assertIn("if: env.NUGET_USERNAME != ''", release_workflow)
+        self.assertNotIn("continue-on-error", release_workflow)
         self.assertNotIn("secrets.NUGET_API_KEY", release_workflow)
         self.assertIn("git merge-base --is-ancestor", release_workflow)
-        self.assertIn("gh release create", release_workflow)
+        release_build_step = workflow_step(release_workflow, "Build")
+        self.assertIn("-p:DeployToGame=false", release_build_step)
+        draft_step = workflow_step(release_workflow, "Create or update draft release")
+        self.assertIn("if (-not $release.isDraft)", draft_step)
+        self.assertIn("already published", draft_step)
+        self.assertIn(
+            'throw "Release $env:GITHUB_REF_NAME is already published."',
+            draft_step,
+        )
+        self.assertIn(
+            'gh release upload $env:GITHUB_REF_NAME "$env:ZIP_FILE" --clobber',
+            draft_step,
+        )
+        self.assertIn("release not found", draft_step)
+        self.assertIn("gh release create", draft_step)
+        self.assertIn(
+            "} else {\n            throw \"Could not inspect the existing release:",
+            draft_step,
+        )
+        self.assertLess(
+            draft_step.index("if (-not $release.isDraft)"),
+            draft_step.index("gh release upload"),
+        )
+        self.assertLess(
+            draft_step.index("already published."),
+            draft_step.index("gh release upload"),
+        )
+        self.assertLess(
+            draft_step.index("release not found"),
+            draft_step.index("gh release create"),
+        )
+        self.assertLess(
+            draft_step.index("gh release upload"),
+            draft_step.rindex("if ($LASTEXITCODE -ne 0)"),
+        )
+        nuget_step = workflow_step(release_workflow, "Publish NuGet package")
+        self.assertIn("dotnet nuget push", nuget_step)
+        self.assertIn("--skip-duplicate", nuget_step)
         self.assertIn('Join-Path $PWD "publish" "$targetName.zip"', release_workflow)
         self.assertNotIn("*$targetName.zip", release_workflow)
 

@@ -65,7 +65,8 @@ jobs:
         run: |
           dotnet build $env:SOLUTION --configuration Release --no-restore `
             -p:Version=$env:VERSION `
-            -p:GeneratePackageOnBuild=false
+            -p:GeneratePackageOnBuild=false `
+            -p:DeployToGame=false
 
       - name: Test
         run: dotnet test $env:SOLUTION --configuration Release --no-build
@@ -101,14 +102,31 @@ jobs:
           "ZIP_FILE=$zipPath" >> $env:GITHUB_ENV
           "NUPKG_FILE=$($packages[0].FullName)" >> $env:GITHUB_ENV
 
-      - name: Create draft release
+      - name: Create or update draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME "$env:ZIP_FILE" `
-            --draft `
-            --title "$env:MOD_TITLE $env:VERSION" `
-            --notes "Draft release for $env:GITHUB_REF_NAME."
+          $releaseLookup = gh release view $env:GITHUB_REF_NAME --json isDraft 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            $release = $releaseLookup | ConvertFrom-Json
+            if (-not $release.isDraft) {
+              throw "Release $env:GITHUB_REF_NAME is already published."
+            }
+            gh release upload $env:GITHUB_REF_NAME "$env:ZIP_FILE" --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not update the draft release asset.'
+            }
+          } elseif (($releaseLookup -join "`n").Trim() -eq 'release not found') {
+            gh release create $env:GITHUB_REF_NAME "$env:ZIP_FILE" `
+              --draft `
+              --title "$env:MOD_TITLE $env:VERSION" `
+              --notes "Draft release for $env:GITHUB_REF_NAME."
+          } else {
+            throw "Could not inspect the existing release: $($releaseLookup -join ' ')"
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not create or update the draft release.'
+          }
 
       - name: Warn when NuGet username is missing
         if: env.NUGET_USERNAME == ''
@@ -126,4 +144,5 @@ jobs:
         run: |
           dotnet nuget push "$env:NUPKG_FILE" `
             --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" `
-            --source https://api.nuget.org/v3/index.json
+            --source https://api.nuget.org/v3/index.json `
+            --skip-duplicate
