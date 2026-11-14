@@ -49,8 +49,14 @@ def is_disposable_context(environ=None):
 
 
 def path_entries(value):
-    # Empty separators are not path entries; the .NET CLI may normalize them.
-    return [] if not value else [entry for entry in value.split(";") if entry]
+    return [] if not value else value.split(";")
+
+
+def _append_comparison_entries(value):
+    entries = path_entries(value)
+    while entries and not entries[-1]:
+        entries.pop()
+    return entries
 
 
 def repository_test_hive_entries(snapshot):
@@ -126,8 +132,9 @@ def _is_within_hive(entry, hive):
 
 
 def _is_append_only_within_hive(before, after, hive):
-    old_entries = path_entries(before)
-    new_entries = path_entries(after)
+    # The .NET CLI may consume a trailing empty separator when it appends.
+    old_entries = _append_comparison_entries(before)
+    new_entries = _append_comparison_entries(after)
     if new_entries[: len(old_entries)] != old_entries:
         return False
     return all(
