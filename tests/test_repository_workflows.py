@@ -28,10 +28,10 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("Check PATH isolation preflight", workflow)
         self.assertLess(
             workflow.index("Check PATH isolation preflight"),
-            workflow.index("Install official template packages"),
+            workflow.index("Download official template packages"),
         )
-        self.assertIn("official-template-hive", workflow)
-        self.assertIn("dotnet new install $official", workflow)
+        self.assertIn("Download official template packages", workflow)
+        self.assertNotIn("dotnet new install", workflow)
         self.assertIn("Blasphemous.Modding.Templates.1.4.1.nupkg", workflow)
         self.assertIn("Blasphemous.Modding.Templates.1.4.0.nupkg", workflow)
         self.assertIn("BLAS1_TEMPLATE_PACKAGE", workflow)

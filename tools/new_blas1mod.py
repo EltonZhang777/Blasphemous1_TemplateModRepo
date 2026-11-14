@@ -113,6 +113,9 @@ RESERVED_DEVICE_NAMES = {
 }
 
 COLLIDING_PROJECT_NAMES = {"Main", "ModInfo", "ModTemplate", "TemplateMod"}
+COLLIDING_PROJECT_NAME_KEYS = {
+    name.casefold() for name in COLLIDING_PROJECT_NAMES
+}
 RESERVED_DISPLAY_TEXT = {
     "Mod Creator",
     "Mod Template",
@@ -197,7 +200,7 @@ def validate_machine_identifier(value):
         raise ValueError("Machine Identifier must not be a C# keyword.")
     if value.upper() in RESERVED_DEVICE_NAMES:
         raise ValueError("Machine Identifier must not be a Windows device name.")
-    if value in COLLIDING_PROJECT_NAMES:
+    if value.casefold() in COLLIDING_PROJECT_NAME_KEYS:
         raise ValueError(
             "Machine Identifier collides with a generated type or template placeholder."
         )
@@ -254,12 +257,15 @@ def validate_output_path(value):
 
 
 def run(command):
+    environment = os.environ.copy()
+    environment["DOTNET_CLI_UI_LANGUAGE"] = "en-US"
     return subprocess.run(
         command,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=environment,
     )
 
 

@@ -172,6 +172,9 @@ class WrapperTests(unittest.TestCase):
             "TemplateMod",
             "Main",
             "ModInfo",
+            "Modinfo",
+            "MODINFO",
+            "MAIN",
         )
         for name in invalid_names:
             with self.subTest(name=name):
@@ -313,6 +316,31 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(
             wrapper.parse_installed_versions(output), ["1.4.1"]
         )
+
+    def test_run_forces_english_cli_language(self):
+        wrapper = load_wrapper_module()
+        completed = subprocess.CompletedProcess(["dotnet"], 0, "", "")
+        with mock.patch.object(
+            wrapper.subprocess, "run", return_value=completed
+        ) as run:
+            wrapper.run(["dotnet", "new", "uninstall"])
+
+        self.assertEqual(
+            run.call_args.kwargs["env"]["DOTNET_CLI_UI_LANGUAGE"], "en-US"
+        )
+
+    def test_colliding_project_names_are_case_insensitive(self):
+        wrapper = load_wrapper_module()
+        for name in (
+            "Modinfo",
+            "MODINFO",
+            "MAIN",
+            "Modtemplate",
+            "Templatemod",
+        ):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError):
+                    wrapper.validate_machine_identifier(name)
 
     @disposable_dotnet_test
     def test_valid_generation_modernizes_identity_and_deployment(self):
