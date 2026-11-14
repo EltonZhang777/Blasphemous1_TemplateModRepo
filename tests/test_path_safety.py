@@ -86,6 +86,20 @@ class PathSafetyTests(unittest.TestCase):
         self.assertIn("user Path before", diff)
         self.assertIn(hive, diff)
 
+    def test_empty_path_entries_do_not_block_hive_appends(self):
+        hive = (
+            r"C:\repo\.wt\issue-1-worker\tmp"
+            r"\blas1-wrapper-test\hive"
+        )
+        before = path_safety.PathSnapshot(r"C:\Tools;", None)
+        after = path_safety.PathSnapshot(
+            rf"C:\Tools;{hive}\.dotnet\tools", None
+        )
+
+        diff = path_safety.assert_path_change_allowed(before, after, hive)
+
+        self.assertIn(hive, diff)
+
     def test_addition_outside_declared_hive_is_rejected(self):
         hive = (
             r"C:\repo\.wt\issue-1-worker\tmp"

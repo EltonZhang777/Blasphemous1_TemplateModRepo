@@ -49,7 +49,8 @@ def is_disposable_context(environ=None):
 
 
 def path_entries(value):
-    return [] if not value else value.split(";")
+    # Empty separators are not path entries; the .NET CLI may normalize them.
+    return [] if not value else [entry for entry in value.split(";") if entry]
 
 
 def repository_test_hive_entries(snapshot):
