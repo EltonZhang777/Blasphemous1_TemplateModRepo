@@ -52,11 +52,13 @@ def path_entries(value):
     return [] if not value else value.split(";")
 
 
-def _append_comparison_entries(value):
+def _split_trailing_empty_entries(value):
     entries = path_entries(value)
+    trailing = 0
     while entries and not entries[-1]:
         entries.pop()
-    return entries
+        trailing += 1
+    return entries, trailing
 
 
 def repository_test_hive_entries(snapshot):
@@ -132,15 +134,17 @@ def _is_within_hive(entry, hive):
 
 
 def _is_append_only_within_hive(before, after, hive):
-    # The .NET CLI may consume a trailing empty separator when it appends.
-    old_entries = _append_comparison_entries(before)
-    new_entries = _append_comparison_entries(after)
+    # The .NET CLI may consume one trailing empty separator when it appends.
+    old_entries, old_trailing = _split_trailing_empty_entries(before)
+    new_entries, new_trailing = _split_trailing_empty_entries(after)
     if new_entries[: len(old_entries)] != old_entries:
         return False
-    return all(
-        _is_within_hive(entry, hive)
-        for entry in new_entries[len(old_entries) :]
-    )
+    appended = new_entries[len(old_entries) :]
+    if not appended:
+        return path_entries(before) == path_entries(after)
+    if old_trailing - new_trailing not in (0, 1):
+        return False
+    return all(_is_within_hive(entry, hive) for entry in appended)
 
 
 def assert_path_change_allowed(before, after, hive):

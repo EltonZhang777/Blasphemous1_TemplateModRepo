@@ -113,6 +113,34 @@ class PathSafetyTests(unittest.TestCase):
         ):
             path_safety.assert_path_change_allowed(before, after, hive)
 
+    def test_trailing_empty_path_changes_are_rejected_without_hive_append(self):
+        hive = (
+            r"C:\repo\.wt\issue-1-worker\tmp"
+            r"\blas1-wrapper-test\hive"
+        )
+        before = path_safety.PathSnapshot(r"C:\Tools", None)
+        after = path_safety.PathSnapshot(r"C:\Tools;;", None)
+
+        with self.assertRaisesRegex(
+            AssertionError, "changed outside the declared Test Hive"
+        ):
+            path_safety.assert_path_change_allowed(before, after, hive)
+
+    def test_hive_append_cannot_consume_multiple_trailing_empty_entries(self):
+        hive = (
+            r"C:\repo\.wt\issue-1-worker\tmp"
+            r"\blas1-wrapper-test\hive"
+        )
+        before = path_safety.PathSnapshot(r"C:\Tools;;", None)
+        after = path_safety.PathSnapshot(
+            rf"C:\Tools;{hive}\.dotnet\tools", None
+        )
+
+        with self.assertRaisesRegex(
+            AssertionError, "changed outside the declared Test Hive"
+        ):
+            path_safety.assert_path_change_allowed(before, after, hive)
+
     def test_addition_outside_declared_hive_is_rejected(self):
         hive = (
             r"C:\repo\.wt\issue-1-worker\tmp"
