@@ -18,6 +18,7 @@ TEMPLATE_PROJECT = (
     / "Blasphemous1.ModTest.Templates.csproj"
 )
 TEMPLATE_README = TEMPLATE_PROJECT.parent / "README.md"
+CREATE_GUIDE = REPO_ROOT / "docs" / "create-mod-repository.md"
 
 
 class ModTestTemplateTests(unittest.TestCase):
@@ -256,6 +257,28 @@ public static class TargetApi
 
 
 class ModTestTemplateDocumentationTests(unittest.TestCase):
+    def test_from_scratch_guide_is_discoverable_and_complete(self):
+        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "[Create a new Mod repository](docs/create-mod-repository.md)",
+            root_readme,
+        )
+        self.assertTrue(CREATE_GUIDE.is_file())
+        guide = CREATE_GUIDE.read_text(encoding="utf-8")
+        for heading in (
+            "Prerequisites",
+            "Install the Official Template Baseline",
+            "Create the Mod Repository",
+            "Expected Result",
+            "Verify the Generated Repository",
+            "Optional Verification Mod",
+            "Recover from Common Failures",
+            "Stop Before Git",
+            "Completion Checklist",
+        ):
+            self.assertIn(f"\n## {heading}\n", guide)
+
     def test_documentation_shows_manual_solution_wiring(self):
         readme = TEMPLATE_README.read_text(encoding="utf-8")
         root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")

@@ -2,6 +2,13 @@
 
 A non-vendored repository generator for Blasphemous 1 Mod development.
 
+## Create a Mod repository
+
+Generate a new Blasphemous 1 Mod repository from the Official Template Baseline
+by following [Create a new Mod repository](docs/create-mod-repository.md).
+The guide covers prerequisites, the exact Generator Command, generated files,
+verification, and failure recovery.
+
 ## Status
 
 The product is specified in [Issue #1](https://github.com/EltonZhang777/Blasphemous1_TemplateModRepo/issues/1).
