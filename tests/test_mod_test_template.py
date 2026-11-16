@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +20,45 @@ TEMPLATE_PROJECT = (
 )
 TEMPLATE_README = TEMPLATE_PROJECT.parent / "README.md"
 CREATE_GUIDE = REPO_ROOT / "docs" / "create-mod-repository.md"
+MIGRATION_GUIDE = REPO_ROOT / "docs" / "migrate-mod-repository.md"
+MARKDOWN_LOCAL_LINK = re.compile(
+    r"\[[^\]]+\]\((?!(?:https?://|mailto:))([^)]+)\)"
+)
+
+
+def local_link_targets(document):
+    for line in markdown_prose(document):
+        for match in MARKDOWN_LOCAL_LINK.finditer(line):
+            relative_path, _, anchor = match.group(1).partition("#")
+            if relative_path:
+                target = document.parent / relative_path
+            else:
+                target = document
+            yield target, anchor
+
+
+def heading_anchors(document):
+    counts = {}
+    for line in markdown_prose(document):
+        match = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        slug = re.sub(r"[`*_]", "", match.group(1)).strip().lower()
+        slug = re.sub(r"[^\w\s-]", "", slug)
+        slug = re.sub(r"\s+", "-", slug)
+        count = counts.get(slug, 0)
+        counts[slug] = count + 1
+        yield slug if count == 0 else f"{slug}-{count}"
+
+
+def markdown_prose(document):
+    in_fence = False
+    for line in document.read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            yield line
 
 
 class ModTestTemplateTests(unittest.TestCase):
@@ -257,6 +297,45 @@ public static class TargetApi
 
 
 class ModTestTemplateDocumentationTests(unittest.TestCase):
+    def test_in_place_migration_guide_is_discoverable_and_complete(self):
+        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("## Choose your path", root_readme)
+        self.assertIn(
+            "[Migrate an existing Mod repository]"
+            "(docs/migrate-mod-repository.md)",
+            root_readme,
+        )
+        self.assertTrue(MIGRATION_GUIDE.is_file())
+        prose = "\n".join(markdown_prose(MIGRATION_GUIDE))
+        for heading in (
+            "Supported Inputs",
+            "Record the Starting State and Prepare Recovery",
+            "Inventory Before Editing",
+            "Preserve Mod Identity",
+            "Preserve the Existing Layout",
+            "Classify Template Differences",
+            "Apply Required Differences",
+            "Structural Refactor Gate",
+            "Reconcile CI and Release Semantics",
+            "Verify the Migrated Repository",
+            "Optional In-Game Smoke",
+            "Rollback",
+            "Stop States",
+            "Completion Checklist",
+        ):
+            self.assertIn(f"\n## {heading}\n", prose)
+        self.assertIn(
+            "rollback",
+            [anchor for _, anchor in local_link_targets(MIGRATION_GUIDE) if anchor],
+        )
+        for source in (REPO_ROOT / "README.md", MIGRATION_GUIDE):
+            for target, anchor in local_link_targets(source):
+                with self.subTest(source=source.name, target=str(target)):
+                    self.assertTrue(target.exists())
+                    if anchor:
+                        self.assertIn(anchor, heading_anchors(target))
+
     def test_from_scratch_guide_is_discoverable_and_complete(self):
         root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -265,7 +344,7 @@ class ModTestTemplateDocumentationTests(unittest.TestCase):
             root_readme,
         )
         self.assertTrue(CREATE_GUIDE.is_file())
-        guide = CREATE_GUIDE.read_text(encoding="utf-8")
+        prose = "\n".join(markdown_prose(CREATE_GUIDE))
         for heading in (
             "Prerequisites",
             "Install the Official Template Baseline",
@@ -277,7 +356,7 @@ class ModTestTemplateDocumentationTests(unittest.TestCase):
             "Stop Before Git",
             "Completion Checklist",
         ):
-            self.assertIn(f"\n## {heading}\n", guide)
+            self.assertIn(f"\n## {heading}\n", prose)
 
     def test_documentation_shows_manual_solution_wiring(self):
         readme = TEMPLATE_README.read_text(encoding="utf-8")
