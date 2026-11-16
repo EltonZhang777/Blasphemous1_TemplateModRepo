@@ -1,0 +1,23 @@
+<Project>
+  <Target Name="PackageMod" AfterTargets="PostBuildEvent">
+    <ItemGroup>
+      <PluginDll Include="$(TargetPath)" />
+      <Resources Include="$(MSBuildProjectDirectory)\resources\**\*.*" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <PackageStagingFolder>$(MSBuildProjectDirectory)\obj\package\$(TargetName)-$([System.Guid]::NewGuid().ToString("N"))</PackageStagingFolder>
+      <PublishFolder>$(MSBuildProjectDirectory)\publish</PublishFolder>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(PublishFolder)" />
+    <Copy SourceFiles="@(Resources)" DestinationFolder="$(PackageStagingFolder)\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PluginDll)" DestinationFolder="$(PackageStagingFolder)\plugins" SkipUnchangedFiles="true" />
+    <ZipDirectory SourceDirectory="$(PackageStagingFolder)" DestinationFile="$(PublishFolder)\$(TargetName).zip" Overwrite="true" />
+
+    <Copy SourceFiles="@(Resources)" DestinationFolder="$(DevFolder)\%(RecursiveDir)" SkipUnchangedFiles="true"
+          Condition="'$(DeployToGame)' == 'true' and '$(DevFolder)' != '' and Exists('$(DevFolder)')" />
+    <Copy SourceFiles="@(PluginDll)" DestinationFolder="$(DevFolder)\plugins" SkipUnchangedFiles="true"
+          Condition="'$(DeployToGame)' == 'true' and '$(DevFolder)' != '' and Exists('$(DevFolder)')" />
+  </Target>
+</Project>

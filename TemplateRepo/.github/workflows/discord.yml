@@ -1,16 +1,31 @@
+name: Discord
+
 on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
-  discord:
-    runs-on: ubuntu-latest
+  notify:
     if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    env:
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Post Webhook
-        uses: SethCohen/github-releases-to-discord@v1
-        with:
-          webhook_url: ${{ secrets.WEBHOOK_URL }}
-          footer_timestamp: true
+      - name: Warn when webhook is missing
+        if: env.WEBHOOK_URL == ''
+        run: echo "::warning::WEBHOOK_URL is not configured; skipping Discord notification."
+
+      - name: Post release to Discord
+        if: env.WEBHOOK_URL != ''
+        env:
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          payload=$(jq -n --arg content "Release published: $RELEASE_NAME - $RELEASE_URL" '{content: $content}')
+          curl --silent --show-error --fail-with-body \
+            -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "$WEBHOOK_URL"

@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <TargetProjectPath>TARGET_PROJECT_PLACEHOLDER</TargetProjectPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(TargetProjectPath)" />
+  </ItemGroup>
+</Project>

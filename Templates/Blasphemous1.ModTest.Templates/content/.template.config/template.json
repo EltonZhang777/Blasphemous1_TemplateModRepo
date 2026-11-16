@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "EltonZhang777",
+  "classifications": [ "Blasphemous", "Mod", "Verification" ],
+  "identity": "Blasphemous1.ModTest",
+  "name": "Blasphemous 1 Mod Test",
+  "shortName": "blasmodtest",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "preferNameDirectory": true,
+  "sourceName": "Blasphemous1.ModTest",
+  "symbols": {
+    "title": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The display title of the verification Mod",
+      "defaultValue": "Mod Test"
+    },
+    "author": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The author of the verification Mod",
+      "defaultValue": "Unknown"
+    },
+    "targetProject": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "Optional path to the target Mod or class-library project",
+      "defaultValue": ""
+    },
+    "titleCSharp": {
+      "type": "derived",
+      "valueSource": "title",
+      "valueTransform": "json",
+      "replaces": "MOD_TITLE_PLACEHOLDER"
+    },
+    "authorCSharp": {
+      "type": "derived",
+      "valueSource": "author",
+      "valueTransform": "json",
+      "replaces": "MOD_AUTHOR_PLACEHOLDER"
+    },
+    "targetProjectXml": {
+      "type": "derived",
+      "valueSource": "targetProject",
+      "valueTransform": "xml",
+      "replaces": "TARGET_PROJECT_PLACEHOLDER"
+    }
+  },
+  "forms": {
+    "json": {
+      "identifier": "jsonEncode"
+    },
+    "xml": {
+      "identifier": "xmlEncode"
+    }
+  },
+  "sources": [
+    {
+      "source": "./",
+      "target": "./",
+      "exclude": [ ".template.config/**", "Optional/**", "**/bin/**", "**/obj/**" ]
+    },
+    {
+      "source": "./Optional/",
+      "target": "./",
+      "condition": "(targetProject != \"\")"
+    }
+  ]
+}
