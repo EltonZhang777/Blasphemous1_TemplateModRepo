@@ -73,6 +73,14 @@ EXPECTED_GITIGNORE_RULES = [
     ".serena/",
     "docs/handoff/",
 ]
+README_IDENTITY_PLACEHOLDERS = (
+    "@TITLE@",
+    "@PROJECT_NAME@",
+    "@MACHINE_IDENTIFIER@",
+    "@TITLE_CSHARP@",
+    "@AUTHOR@",
+    "@AUTHOR_CSHARP@",
+)
 
 
 def parse_editorconfig(text):
@@ -143,6 +151,90 @@ class WrapperTests(unittest.TestCase):
             encoding="utf-8",
             errors="replace",
         )
+
+    def assert_author_readme(self, text, project_name, machine_identifier, title):
+        lines = text.splitlines()
+        self.assertEqual(lines[0], f"# {title}")
+        self.assertEqual(sum(line.startswith("# ") for line in lines), 1)
+
+        headings = [
+            "## Requirements",
+            "### Development prerequisites",
+            "### In-game testing prerequisites",
+            "## Build and test",
+            "## Development deployment",
+            "## Resources and Mod Package",
+            "## Verification Mod",
+            "## CI and releases",
+        ]
+        for heading in headings:
+            self.assertIn(heading, lines)
+        self.assertEqual(
+            [lines.index(heading) for heading in headings],
+            sorted(lines.index(heading) for heading in headings),
+        )
+
+        required = (
+            "dotnet --version",
+            "Blasphemous 1",
+            "BepInEx",
+            "ModdingAPI 3.0.1",
+            f"dotnet restore {project_name}.sln",
+            f"dotnet build {project_name}.sln --no-restore",
+            f"dotnet test {project_name}.sln --no-build",
+            "net48",
+            "xUnit",
+            "net35",
+            "does not require Blasphemous, Unity, or BepInEx",
+            ".\\dotnet_format.bat",
+            "-p:DeployToGame=true",
+            '-p:DevFolder="C:\\path\\to\\Blasphemous\\Modding"',
+            "must already exist",
+            f"plugins/{machine_identifier}.dll",
+            "visually confirm",
+            "resources/",
+            f"publish/{machine_identifier}.zip",
+            "entry assembly",
+            "relative directory layout",
+            "Automated Test Project outputs are not included",
+            "Dependency DLLs are not included",
+            f"same `publish/{machine_identifier}.zip` package",
+            "When generated with the optional Verification Mod",
+            f"{project_name}.TestMod/publish/{project_name}.TestMod.zip",
+            f"plugins/{project_name}.TestMod.dll",
+            "STARTUP_READY",
+            "extract the Verification Mod archive",
+            "manual in-game verification",
+            "SemVer",
+            "draft",
+            "only the main Mod Package",
+            "Windows with .NET 10",
+            "builds in Release",
+            "checks formatting",
+            "CRLF",
+            "NuGet",
+            "Discord",
+            "warn and skip",
+        )
+        for value in required:
+            self.assertIn(value, text)
+
+        forbidden = (
+            "Official Template Baseline",
+            "Blasphemous.Modding.Templates",
+            "dotnet new install",
+            "AGENTS.md",
+            "docs/agents",
+            "git clone",
+            "## License",
+            "## Contributing",
+        )
+        for value in forbidden:
+            self.assertNotIn(value, text)
+
+    def assert_no_readme_placeholders(self, text):
+        for placeholder in README_IDENTITY_PLACEHOLDERS:
+            self.assertNotIn(placeholder, text)
 
     def install_template_package(self, package):
         self.assertEqual(platform.system(), "Windows")
@@ -415,6 +507,15 @@ class WrapperTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     wrapper.validate_machine_identifier(name)
 
+    def test_overlay_readme_preserves_author_contract(self):
+        text = (REPO_ROOT / "TemplateRepo" / "README.md").read_text(encoding="utf-8")
+        self.assert_author_readme(
+            text,
+            "@PROJECT_NAME@",
+            "@MACHINE_IDENTIFIER@",
+            "@TITLE@",
+        )
+
     @disposable_dotnet_test
     def test_valid_generation_modernizes_identity_and_deployment(self):
         self.install_official_template()
@@ -599,11 +700,14 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertIn("ModMetadataTests", test_source)
         self.assertIn("typeof(Blasphemous.Example.Example)", test_source)
-        self.assertIn("dotnet test", (output / "README.md").read_text(encoding="utf-8"))
-        self.assertIn(
-            "DeployToGame",
-            (output / "README.md").read_text(encoding="utf-8"),
+        readme_text = (output / "README.md").read_text(encoding="utf-8")
+        self.assert_author_readme(
+            readme_text,
+            "Blasphemous.Example",
+            "Example",
+            "My Mod Template",
         )
+        self.assert_no_readme_placeholders(readme_text)
         self.assertIn(
             "DeployToGame",
             (output / "AGENTS.md").read_text(encoding="utf-8"),
@@ -635,10 +739,7 @@ class WrapperTests(unittest.TestCase):
                 "TemplateMod",
                 "Template Mod",
                 "Template Author",
-                "@PROJECT_NAME@",
-                "@MACHINE_IDENTIFIER@",
-                "@TITLE@",
-                "@AUTHOR@",
+                *README_IDENTITY_PLACEHOLDERS,
             ):
                 self.assertNotIn(placeholder, text, str(path))
 
@@ -1014,6 +1115,14 @@ class WrapperTests(unittest.TestCase):
         solution_text = (output / f"{project_name}.sln").read_text(
             encoding="utf-8"
         )
+        readme_text = (output / "README.md").read_text(encoding="utf-8")
+        self.assert_author_readme(
+            readme_text,
+            project_name,
+            "WithTest",
+            title,
+        )
+        self.assert_no_readme_placeholders(readme_text)
         main_project_text = (output / f"{project_name}.csproj").read_text(
             encoding="utf-8"
         )
