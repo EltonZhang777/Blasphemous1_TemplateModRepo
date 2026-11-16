@@ -161,9 +161,11 @@ The main project targets `net35`. The adjacent Automated Test Project targets
 is disabled by default; a build creates the Mod Package without requiring a
 game installation.
 
-## Verify the Generated Repository
+## Verify and Record Creation Evidence
 
-Change to the generated directory and restore, build, and test it:
+Record the installed baseline version, generated path, command outputs, and
+package entries as creation evidence. Change to the generated directory and
+restore, build, and test it:
 
 ```powershell
 Set-Location C:\path\to\Blasphemous.Example

@@ -422,9 +422,10 @@ If hosted CI was not run, record it as `UNVERIFIED`. Local success is not
 hosted-CI evidence. If a workflow replacement is intentionally deferred, record
 the remaining difference and owner; do not claim the CI migration is complete.
 
-## Verify the Migrated Repository
+## Verify and Record Migration Evidence
 
-Record the actual paths from the inventory, then run the local gates:
+Record the inventory paths, command outputs, package entries, and any
+`NOT RUN` or `UNVERIFIED` state as migration evidence, then run the local gates:
 
 ```powershell
 $solution = '<recorded-solution>'

@@ -19,6 +19,8 @@ TEMPLATE_PROJECT = (
     / "Blasphemous1.ModTest.Templates.csproj"
 )
 TEMPLATE_README = TEMPLATE_PROJECT.parent / "README.md"
+ROOT_README = REPO_ROOT / "README.md"
+ROOT_AGENTS = REPO_ROOT / "AGENTS.md"
 CREATE_GUIDE = REPO_ROOT / "docs" / "create-mod-repository.md"
 MIGRATION_GUIDE = REPO_ROOT / "docs" / "migrate-mod-repository.md"
 MARKDOWN_LOCAL_LINK = re.compile(
@@ -59,6 +61,14 @@ def markdown_prose(document):
             continue
         if not in_fence:
             yield line
+
+
+def level_two_headings(document):
+    return [
+        line[3:].strip()
+        for line in markdown_prose(document)
+        if line.startswith("## ")
+    ]
 
 
 class ModTestTemplateTests(unittest.TestCase):
@@ -298,7 +308,7 @@ public static class TargetApi
 
 class ModTestTemplateDocumentationTests(unittest.TestCase):
     def test_in_place_migration_guide_is_discoverable_and_complete(self):
-        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        root_readme = ROOT_README.read_text(encoding="utf-8")
 
         self.assertIn("## Choose your path", root_readme)
         self.assertIn(
@@ -318,7 +328,7 @@ class ModTestTemplateDocumentationTests(unittest.TestCase):
             "Apply Required Differences",
             "Structural Refactor Gate",
             "Reconcile CI and Release Semantics",
-            "Verify the Migrated Repository",
+            "Verify and Record Migration Evidence",
             "Optional In-Game Smoke",
             "Rollback",
             "Stop States",
@@ -329,15 +339,9 @@ class ModTestTemplateDocumentationTests(unittest.TestCase):
             "rollback",
             [anchor for _, anchor in local_link_targets(MIGRATION_GUIDE) if anchor],
         )
-        for source in (REPO_ROOT / "README.md", MIGRATION_GUIDE):
-            for target, anchor in local_link_targets(source):
-                with self.subTest(source=source.name, target=str(target)):
-                    self.assertTrue(target.exists())
-                    if anchor:
-                        self.assertIn(anchor, heading_anchors(target))
 
     def test_from_scratch_guide_is_discoverable_and_complete(self):
-        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        root_readme = ROOT_README.read_text(encoding="utf-8")
 
         self.assertIn(
             "[Create a new Mod repository](docs/create-mod-repository.md)",
@@ -350,7 +354,7 @@ class ModTestTemplateDocumentationTests(unittest.TestCase):
             "Install the Official Template Baseline",
             "Create the Mod Repository",
             "Expected Result",
-            "Verify the Generated Repository",
+            "Verify and Record Creation Evidence",
             "Optional Verification Mod",
             "Recover from Common Failures",
             "Stop Before Git",
@@ -360,10 +364,96 @@ class ModTestTemplateDocumentationTests(unittest.TestCase):
 
     def test_documentation_shows_manual_solution_wiring(self):
         readme = TEMPLATE_README.read_text(encoding="utf-8")
-        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("dotnet sln add", readme)
-        self.assertIn("dotnet sln add", root_readme)
-        self.assertIn("blasmodtest", root_readme)
+
+    def test_documentation_links_resolve_locally(self):
+        for source in (ROOT_README, CREATE_GUIDE, MIGRATION_GUIDE, ROOT_AGENTS):
+            for target, anchor in local_link_targets(source):
+                with self.subTest(source=source.name, target=str(target)):
+                    self.assertTrue(target.exists())
+                    if anchor:
+                        self.assertIn(anchor, heading_anchors(target))
+
+    def test_user_readme_and_maintainer_instructions_are_separated(self):
+        readme = ROOT_README.read_text(encoding="utf-8")
+        agents = ROOT_AGENTS.read_text(encoding="utf-8")
+        readme_lines = readme.splitlines()
+        h1_index = readme_lines.index("# Blasphemous1_TemplateModRepo")
+        first_h2_index = next(
+            index
+            for index, line in enumerate(readme_lines)
+            if line.startswith("## ")
+        )
+        self.assertTrue(
+            "".join(readme_lines[h1_index + 1:first_h2_index]).strip()
+        )
+        readme_headings = level_two_headings(ROOT_README)
+        agents_headings = level_two_headings(ROOT_AGENTS)
+
+        self.assertEqual(
+            [
+                "Clone the Repository",
+                "Prerequisites",
+                "Choose your path",
+                "Contributing",
+                "License",
+            ],
+            readme_headings,
+        )
+        self.assertIn(
+            "git clone https://github.com/EltonZhang777/"
+            "Blasphemous1_TemplateModRepo.git",
+            readme,
+        )
+        self.assertIn(
+            "[GitHub Issues](https://github.com/EltonZhang777/"
+            "Blasphemous1_TemplateModRepo/issues)",
+            readme,
+        )
+        self.assertIn("[LICENSE](LICENSE)", readme)
+        for marker in (
+            "dotnet new install Blasphemous.Modding.Templates",
+            "dotnet pack .\\Templates",
+            "python -m unittest discover",
+            "BLAS1_DISPOSABLE_TEST_CONTEXT",
+            "DeployToGame",
+            "blasmodtest",
+            "dotnet sln add",
+            "AGENTS.md",
+            "AGENTS.local.md",
+            "GLOSSARY.md",
+            "docs/adr",
+            "docs/agents",
+        ):
+            self.assertNotIn(marker, readme)
+
+        for heading in (
+            "Documentation ownership",
+            "Language",
+            "Issue and domain workflow",
+            "Maintainer checks",
+            "Test Template Package",
+        ):
+            self.assertIn(heading, agents_headings)
+        for marker in (
+            "python -m unittest discover -s tests -v",
+            "BLAS1_DISPOSABLE_TEST_CONTEXT",
+            "Disposable Test Context",
+            "dotnet pack .\\Templates\\Blasphemous1.ModTest.Templates",
+            "Get-ChildItem .\\Templates\\Blasphemous1.ModTest.Templates",
+            "dotnet new install $package.FullName",
+            "blasmodtest",
+            "dotnet sln add",
+            "docs/agents/issue-tracker.md",
+            "docs/agents/triage-labels.md",
+            "docs/agents/domain.md",
+            "GLOSSARY.md",
+            "docs/adr/",
+            "AGENTS.local.md",
+            "Templates/Blasphemous1.ModTest.Templates/README.md",
+        ):
+            self.assertIn(marker, agents)
+        self.assertNotIn("](AGENTS.local.md)", agents)
 
 
 if __name__ == "__main__":
