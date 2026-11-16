@@ -1,11 +1,26 @@
+# Build and test output
 .vs/
 bin/
 obj/
 publish/
 TestResults/
+
+# Visual Studio user state
 *.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vshistory/
+
+# Package output
 *.nupkg
 *.snupkg
+
+# Certificate and publish settings
+*.pfx
+*.publishsettings
+
+# Local development and agent state
 .wt/
 tmp/
 AGENTS.local.md

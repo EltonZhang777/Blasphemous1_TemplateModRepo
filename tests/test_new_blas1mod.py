@@ -34,6 +34,79 @@ WRONG_PACKAGE = Path(
         DEFAULT_PACKAGE.with_name("Blasphemous.Modding.Templates.1.4.0.nupkg"),
     )
 )
+
+EXPECTED_EDITORCONFIG_GLOBAL = {
+    "charset": "utf-8",
+    "end_of_line": "crlf",
+    "insert_final_newline": "true",
+    "trim_trailing_whitespace": "true",
+    "indent_style": "space",
+    "indent_size": "4",
+}
+EXPECTED_CSHARP_RULES = {
+    "dotnet_sort_system_directives_first": "false",
+    "csharp_style_var_elsewhere": "false",
+    "csharp_style_expression_bodied_methods": "when_on_single_line",
+    "csharp_using_directive_placement": "outside_namespace",
+    "dotnet_naming_rule.types_should_be_pascal_case.severity": "suggestion",
+    "csharp_space_after_comma": "true",
+    "csharp_new_line_before_open_brace": "all",
+}
+EXPECTED_GITIGNORE_RULES = [
+    ".vs/",
+    "bin/",
+    "obj/",
+    "publish/",
+    "TestResults/",
+    "*.user",
+    "*.suo",
+    "*.userosscache",
+    "*.sln.docstates",
+    ".vshistory/",
+    "*.nupkg",
+    "*.snupkg",
+    "*.pfx",
+    "*.publishsettings",
+    ".wt/",
+    "tmp/",
+    "AGENTS.local.md",
+    ".serena/",
+    "docs/handoff/",
+]
+
+
+def parse_editorconfig(text):
+    root_values = {}
+    sections = {}
+    current = root_values
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            current = sections.setdefault(line, {})
+            continue
+        if "=" in line:
+            key, value = line.split("=", 1)
+            current[key.strip()] = value.strip()
+    return root_values, sections
+
+
+def editorconfig_value(sections, section, key):
+    values = sections[section]
+    if key in values:
+        return values[key]
+    return sections.get("[*]", {}).get(key)
+
+
+def parse_ignore_rules(text):
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
 def load_wrapper_module():
     spec = importlib.util.spec_from_file_location("new_blas1mod", WRAPPER)
     module = importlib.util.module_from_spec(spec)
@@ -376,6 +449,35 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue((output / ".editorconfig").is_file())
         self.assertTrue((output / ".gitattributes").is_file())
         self.assertTrue((output / ".gitignore").is_file())
+        editorconfig_root, editorconfig_sections = parse_editorconfig(
+            (output / ".editorconfig").read_text(encoding="utf-8")
+        )
+        self.assertEqual(editorconfig_root, {"root": "true"})
+        self.assertEqual(
+            editorconfig_sections["[*]"], EXPECTED_EDITORCONFIG_GLOBAL
+        )
+        csharp_rules = editorconfig_sections["[*.cs]"]
+        for key, expected in EXPECTED_CSHARP_RULES.items():
+            with self.subTest(editorconfig_rule=key):
+                self.assertEqual(csharp_rules[key], expected)
+        self.assertNotIn("insert_final_newline", csharp_rules)
+        self.assertEqual(
+            editorconfig_value(
+                editorconfig_sections,
+                "[*.cs]",
+                "insert_final_newline",
+            ),
+            "true",
+        )
+        self.assertEqual(
+            editorconfig_sections["[*.{sln,csproj,xml,props,targets}]"],
+            {"indent_size": "2"},
+        )
+        ignore_rules = parse_ignore_rules(
+            (output / ".gitignore").read_text(encoding="utf-8")
+        )
+        self.assertEqual(ignore_rules, EXPECTED_GITIGNORE_RULES)
+        self.assertEqual(len(ignore_rules), 19)
         self.assertIn(
             "*.cs text eol=crlf",
             (output / ".gitattributes").read_text(encoding="utf-8"),
