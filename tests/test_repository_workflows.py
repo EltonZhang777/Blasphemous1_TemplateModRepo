@@ -1,8 +1,12 @@
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
-from workflow_contract import assert_nuget_release_guards
+from workflow_contract import (
+    assert_nuget_release_guards,
+    assert_supported_workflow_actions,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +15,46 @@ RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 
 
 class RepositoryWorkflowTests(unittest.TestCase):
+    def test_all_workflows_use_supported_external_actions(self):
+        workflows = assert_supported_workflow_actions(REPO_ROOT)
+
+        self.assertEqual(
+            {path.relative_to(REPO_ROOT).as_posix() for path in workflows},
+            {
+                ".github/workflows/release.yml",
+                ".github/workflows/validate.yml",
+                "TemplateRepo/.github/workflows/build.yml",
+                "TemplateRepo/.github/workflows/discord.yml",
+                "TemplateRepo/.github/workflows/release.yml",
+            },
+        )
+
+    def test_action_contract_rejects_unknown_and_ignores_local_workflows(self):
+        artifacts = REPO_ROOT / "tmp"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        root = Path(tempfile.mkdtemp(dir=artifacts))
+        workflow_dir = root / ".github" / "workflows"
+        workflow_dir.mkdir(parents=True)
+        workflow = workflow_dir / "contract.yml"
+        workflow.write_text(
+            "jobs:\n  test:\n    steps:\n      - uses: example/action@v1\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            AssertionError, "unsupported external action example/action@v1"
+        ):
+            assert_supported_workflow_actions(root)
+
+        workflow.write_text(
+            "jobs:\n  test:\n    uses: ./.github/workflows/reusable.yml\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            assert_supported_workflow_actions(root),
+            (workflow,),
+        )
+
     def test_validation_workflow_contract(self):
         workflow = VALIDATE_WORKFLOW.read_text(encoding="utf-8")
 
