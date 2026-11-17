@@ -132,6 +132,7 @@ For the example identity, the generated directory contains:
 Blasphemous.Example/
 |-- Blasphemous.Example.csproj
 |-- Blasphemous.Example.sln
+|-- Example.cs
 |-- Main.cs
 |-- ModInfo.cs
 |-- PackageMod.targets
@@ -159,7 +160,8 @@ Blasphemous.Example/
 The main project targets `net35`. The adjacent Automated Test Project targets
 `net48`, references the real Mod project, and is not packable. Game deployment
 is disabled by default; a build creates the Mod Package without requiring a
-game installation.
+game installation. `Example.cs` contains the generated Mod class, and `Main.cs`
+contains the startup entry point.
 
 ## Verify and Record Creation Evidence
 
@@ -212,7 +214,7 @@ Expected outcomes:
 
 - `release-nuget\Blasphemous.Example.1.2.3.nupkg` exists.
 - `publish\Example.zip` exists.
-- The ZIP contains `plugins\Example.dll`.
+- The ZIP contains `plugins/Example.dll`.
 - Any files under `resources/` are included in the package.
 - Automated test files and assemblies are absent from the Mod Package.
 
@@ -239,8 +241,8 @@ Package and NuGet package. A solution build creates:
 Blasphemous.Example.TestMod\publish\Blasphemous.Example.TestMod.zip
 ```
 
-That ZIP contains both `plugins\Blasphemous.Example.TestMod.dll` and the target
-Mod assembly, `plugins\Example.dll`. The main `publish\Example.zip` still
+That ZIP contains both `plugins/Blasphemous.Example.TestMod.dll` and the target
+Mod assembly, `plugins/Example.dll`. The main `publish\Example.zip` still
 contains only the main Mod and its resources.
 
 In-game loading is optional and is not part of this creation check. The
@@ -284,7 +286,7 @@ The creation path is complete only when all of these checks pass:
   workflow files exist.
 - [ ] Restore, Release build, and Automated Test Project execution succeed.
 - [ ] Both format verification commands succeed.
-- [ ] The Mod Package contains `plugins\Example.dll` and the intended
+- [ ] The Mod Package contains `plugins/Example.dll` and the intended
   resources, without test assemblies.
 - [ ] If selected, the Verification Mod has its own project and package, and
   that package is outside the main Mod Package.

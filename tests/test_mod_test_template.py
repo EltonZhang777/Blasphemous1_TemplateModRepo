@@ -71,6 +71,48 @@ def level_two_headings(document):
     ]
 
 
+def markdown_section(document, start_heading, end_heading):
+    text = document.read_text(encoding="utf-8")
+    start = text.index(start_heading)
+    end = text.index(end_heading, start + len(start_heading))
+    return text[start:end]
+
+
+def assert_ordered(test_case, text, markers):
+    position = -1
+    for marker in markers:
+        next_position = text.find(marker, position + 1)
+        test_case.assertNotEqual(
+            -1,
+            next_position,
+            f"Missing documentation marker: {marker}",
+        )
+        test_case.assertGreater(
+            next_position,
+            position,
+            f"Out-of-order documentation marker: {marker}",
+        )
+        position = next_position
+
+
+def assert_local_links_resolve(test_case, sources):
+    for source in sources:
+        for target, anchor in local_link_targets(source):
+            with test_case.subTest(source=source.name, target=str(target)):
+                test_case.assertTrue(target.exists())
+                if anchor:
+                    test_case.assertIn(anchor, heading_anchors(target))
+
+
+def assert_guide_contract(test_case, guide, root_link, headings):
+    root_readme = ROOT_README.read_text(encoding="utf-8")
+    test_case.assertIn(root_link, root_readme)
+    test_case.assertTrue(guide.is_file())
+    prose = "\n".join(markdown_prose(guide))
+    for heading in headings:
+        test_case.assertIn(f"\n## {heading}\n", prose)
+
+
 class ModTestTemplateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -306,75 +348,191 @@ public static class TargetApi
         self.assertIn("Target project not found", built.stdout + built.stderr)
 
 
-class ModTestTemplateDocumentationTests(unittest.TestCase):
-    def test_in_place_migration_guide_is_discoverable_and_complete(self):
-        root_readme = ROOT_README.read_text(encoding="utf-8")
-
-        self.assertIn("## Choose your path", root_readme)
-        self.assertIn(
-            "[Migrate an existing Mod repository]"
-            "(docs/migrate-mod-repository.md)",
-            root_readme,
-        )
-        self.assertTrue(MIGRATION_GUIDE.is_file())
-        prose = "\n".join(markdown_prose(MIGRATION_GUIDE))
-        for heading in (
-            "Supported Inputs",
-            "Record the Starting State and Prepare Recovery",
-            "Inventory Before Editing",
-            "Preserve Mod Identity",
-            "Preserve the Existing Layout",
-            "Classify Template Differences",
-            "Apply Required Differences",
-            "Structural Refactor Gate",
-            "Reconcile CI and Release Semantics",
-            "Verify and Record Migration Evidence",
-            "Optional In-Game Smoke",
-            "Rollback",
-            "Stop States",
-            "Completion Checklist",
-        ):
-            self.assertIn(f"\n## {heading}\n", prose)
-        self.assertIn(
-            "rollback",
-            [anchor for _, anchor in local_link_targets(MIGRATION_GUIDE) if anchor],
-        )
-
-    def test_from_scratch_guide_is_discoverable_and_complete(self):
-        root_readme = ROOT_README.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "[Create a new Mod repository](docs/create-mod-repository.md)",
-            root_readme,
-        )
-        self.assertTrue(CREATE_GUIDE.is_file())
-        prose = "\n".join(markdown_prose(CREATE_GUIDE))
-        for heading in (
-            "Prerequisites",
-            "Install the Official Template Baseline",
-            "Create the Mod Repository",
-            "Expected Result",
-            "Verify and Record Creation Evidence",
-            "Optional Verification Mod",
-            "Recover from Common Failures",
-            "Stop Before Git",
-            "Completion Checklist",
-        ):
-            self.assertIn(f"\n## {heading}\n", prose)
-
+class TemplatePackageDocumentationTests(unittest.TestCase):
     def test_documentation_shows_manual_solution_wiring(self):
         readme = TEMPLATE_README.read_text(encoding="utf-8")
         self.assertIn("dotnet sln add", readme)
 
-    def test_documentation_links_resolve_locally(self):
-        for source in (ROOT_README, CREATE_GUIDE, MIGRATION_GUIDE, ROOT_AGENTS):
-            for target, anchor in local_link_targets(source):
-                with self.subTest(source=source.name, target=str(target)):
-                    self.assertTrue(target.exists())
-                    if anchor:
-                        self.assertIn(anchor, heading_anchors(target))
 
-    def test_user_readme_and_maintainer_instructions_are_separated(self):
+class RootDocumentationTests(unittest.TestCase):
+    def test_guides_are_discoverable_and_complete(self):
+        self.assertIn(
+            "## Choose your path",
+            ROOT_README.read_text(encoding="utf-8"),
+        )
+        assert_guide_contract(
+            self,
+            MIGRATION_GUIDE,
+            "[Migrate an existing Mod repository]"
+            "(docs/migrate-mod-repository.md)",
+            (
+                "Supported Inputs",
+                "Record the Starting State and Prepare Recovery",
+                "Inventory Before Editing",
+                "Preserve Mod Identity",
+                "Preserve the Existing Layout",
+                "Classify Template Differences",
+                "Apply Required Differences",
+                "Structural Refactor Gate",
+                "Reconcile CI and Release Semantics",
+                "Verify and Record Migration Evidence",
+                "Optional In-Game Smoke",
+                "Rollback",
+                "Stop States",
+                "Completion Checklist",
+            ),
+        )
+        assert_guide_contract(
+            self,
+            CREATE_GUIDE,
+            "[Create a new Mod repository](docs/create-mod-repository.md)",
+            (
+                "Prerequisites",
+                "Install the Official Template Baseline",
+                "Create the Mod Repository",
+                "Expected Result",
+                "Verify and Record Creation Evidence",
+                "Optional Verification Mod",
+                "Recover from Common Failures",
+                "Stop Before Git",
+                "Completion Checklist",
+            ),
+        )
+
+    def test_documentation_links_resolve_locally(self):
+        assert_local_links_resolve(
+            self,
+            (ROOT_README, CREATE_GUIDE, MIGRATION_GUIDE, ROOT_AGENTS),
+        )
+
+    def test_migration_deployment_safety_order(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        probe_build = (
+            "dotnet build $solution --configuration Release "
+            "--no-restore --no-incremental"
+        )
+
+        self.assertEqual(text.find("dotnet build "), text.find(probe_build))
+        self.assertNotEqual(-1, text.find("dotnet build "))
+        assert_ordered(
+            self,
+            text,
+            (
+                "### Inspect Deployment Targets Before the First Build",
+                "rg --no-ignore --hidden -n -i",
+                r"<Copy\b",
+                r"<WriteLinesToFile\b",
+                r"<Move\b",
+                r"<RemoveDir\b",
+                r"<RemoveDirectory\b",
+                r"<Exec\b",
+                "dotnet restore $solution",
+                '-p:DeployToGame=false -p:DevFolder="$probe"',
+                "$probeEntries.Count -ne 0",
+                "dotnet build $solution --configuration Release --no-restore "
+                "-p:Version=1.2.3",
+                "dotnet test $solution --configuration Release --no-build",
+            ),
+        )
+        self.assertIn(
+            "dotnet build $solution --configuration Release --no-restore "
+            '--no-incremental `\n  -p:Version=1.2.3 -p:DeployToGame=true '
+            '-p:DevFolder="$devFolder"',
+            text,
+        )
+        self.assertNotIn(
+            "dotnet build $mainProject --configuration Release --no-restore "
+            "--no-incremental",
+            text,
+        )
+
+    def test_migration_backup_and_restore_path_safety(self):
+        backup = markdown_section(
+            MIGRATION_GUIDE,
+            "### Non-Git repository",
+            "## Inventory Before Editing",
+        )
+        restore = markdown_section(
+            MIGRATION_GUIDE,
+            "### Non-Git restore",
+            "## Stop States",
+        )
+
+        self.assertIn("function Assert-NoReparsePointAncestor", backup)
+        self.assertIn("Get-Item -LiteralPath $path -Force", backup)
+        self.assertIn("[IO.FileAttributes]::ReparsePoint", backup)
+        self.assertIn("Assert-NoReparsePointAncestor $candidate", backup)
+        self.assertIn(
+            "Resolve repository reparse points before backup",
+            backup,
+        )
+        self.assertLess(
+            backup.find("Assert-NoReparsePointAncestor $candidate"),
+            backup.find("New-Item -ItemType Directory"),
+        )
+        self.assertLess(
+            backup.find("Resolve repository reparse points before backup"),
+            backup.find("New-Item -ItemType Directory"),
+        )
+
+        for marker in (
+            "Assert-NoReparsePointAncestor $repo",
+            "Assert-NoReparsePointAncestor $backupRoot",
+            "Assert-NoReparsePointAncestor $backup",
+            "Resolve repository reparse points before restore",
+        ):
+            self.assertIn(marker, restore)
+        self.assertLess(
+            restore.find("Assert-NoReparsePointAncestor $repo"),
+            restore.find("1. Verify the backup"),
+        )
+        for marker in (
+            "repository-manifest.json",
+            "$referenceManifest",
+            "Compare-Object",
+            "Restore: TESTED",
+            "Restore: NOT RUN",
+        ):
+            self.assertIn(marker, restore)
+
+    def test_migration_inventory_and_powershell_placeholders(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+
+        for marker in (
+            "rg --files --hidden",
+            "Get-ChildItem -LiteralPath .github\\workflows -File -Force",
+            "dotnet sln '<solution-path>' add '<test-project-path>'",
+            "dotnet sln '<solution-path>' list",
+        ):
+            self.assertIn(marker, text)
+        self.assertNotIn("dotnet sln <solution-path>", text)
+
+    def test_migration_partial_is_not_ticket_closure(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+
+        self.assertIn("not a GitHub issue-closure state", text)
+        self.assertIn(
+            "requires the exact HEAD plus matching evidence",
+            text,
+        )
+
+    def test_creation_guide_matches_generated_output(self):
+        text = CREATE_GUIDE.read_text(encoding="utf-8")
+        expected_result = markdown_section(
+            CREATE_GUIDE,
+            "## Expected Result",
+            "## Verify and Record Creation Evidence",
+        )
+
+        for marker in ("|-- Example.cs", "|-- Main.cs", "|-- ModInfo.cs"):
+            self.assertIn(marker, expected_result)
+        self.assertIn("`Example.cs` contains the generated Mod class", text)
+        self.assertIn("plugins/Example.dll", text)
+        self.assertIn("plugins/Blasphemous.Example.TestMod.dll", text)
+        self.assertNotIn("plugins\\Example.dll", text)
+        self.assertNotIn("plugins\\Blasphemous.Example.TestMod.dll", text)
+
+    def test_user_and_maintainer_ownership_boundary(self):
         readme = ROOT_README.read_text(encoding="utf-8")
         agents = ROOT_AGENTS.read_text(encoding="utf-8")
         readme_lines = readme.splitlines()

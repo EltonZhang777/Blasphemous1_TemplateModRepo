@@ -46,7 +46,7 @@ verify `git --version`.
 Inspect the repository inputs:
 
 ```powershell
-rg --files -g "*.sln" -g "*.csproj" -g "*.props" -g "*.targets" `
+rg --files --hidden -g "*.sln" -g "*.csproj" -g "*.props" -g "*.targets" `
   -g "NuGet.Config" -g "Directory.*" -g ".github/workflows/*" `
   -g "!bin/**" -g "!obj/**" -g "!publish/**"
 ```
@@ -93,7 +93,7 @@ After the owner confirms the starting state, create a dedicated migration
 branch from that exact SHA:
 
 ```powershell
-git switch -c migrate/template-baseline <recorded-start-sha>
+git switch -c migrate/template-baseline '<recorded-start-sha>'
 ```
 
 Expected outcome: the new branch points at the recorded SHA and
@@ -129,7 +129,29 @@ function Test-IsWithin([string] $candidate, [string] $parent) {
   )
 }
 
+function Assert-NoReparsePointAncestor([string] $candidate) {
+  $path = [IO.Path]::GetFullPath($candidate)
+  while ($path) {
+    if (Test-Path -LiteralPath $path) {
+      $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+      if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Path traverses a reparse point: $path"
+      }
+    }
+    $parent = [IO.Path]::GetDirectoryName($path)
+    if (-not $parent -or $parent -eq $path) {
+      break
+    }
+    $path = $parent
+  }
+}
+
+Assert-NoReparsePointAncestor $repo
+if ($containingRoot) {
+  Assert-NoReparsePointAncestor $containingRoot
+}
 foreach ($candidate in @($backupRoot, $backup)) {
+  Assert-NoReparsePointAncestor $candidate
   if ((Test-IsWithin $candidate $repo) -or (Test-IsWithin $repo $candidate)) {
     throw "The backup and target repository must not contain each other: $candidate"
   }
@@ -144,7 +166,6 @@ foreach ($candidate in @($backupRoot, $backup)) {
 if ((Test-Path -LiteralPath $backupRoot) -or (Test-Path -LiteralPath $backup)) {
   throw "Choose a new backup path: $backupRoot"
 }
-New-Item -ItemType Directory -Path $backupRoot | Out-Null
 $links = @(
   Get-ChildItem -LiteralPath $repo -Recurse -Force |
     Where-Object {
@@ -154,16 +175,18 @@ $links = @(
 if ($links.Count -ne 0) {
   throw "Resolve repository reparse points before backup: $($links.FullName)"
 }
+New-Item -ItemType Directory -Path $backupRoot | Out-Null
 robocopy $repo $backup /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /XJ
 if ($LASTEXITCODE -gt 7) {
   throw "Backup copy failed with exit code $LASTEXITCODE"
 }
 ```
 
-These checks compare normalized paths. Do not use a junction or symbolic link
-that resolves into the repository for the backup path. The backup also stops if
-the source repository contains a reparse point; resolve those links manually
-instead of letting the copy follow them.
+These checks walk every existing ancestor of the target, containing root, and
+backup paths, then compare normalized paths. They stop on a junction or
+symbolic link even when the final backup directory does not exist yet. The
+backup also stops if the source repository contains a reparse point; resolve
+those links manually instead of letting the copy follow them.
 
 Verify that the source and backup contain the same relative file paths and
 SHA-256 hashes:
@@ -216,13 +239,13 @@ versions, and command output where relevant.
 Useful read-only commands include:
 
 ```powershell
-rg --files -g "*.sln" -g "*.csproj" -g "*.props" -g "*.targets" `
+rg --files --hidden -g "*.sln" -g "*.csproj" -g "*.props" -g "*.targets" `
   -g "NuGet.Config" -g "Directory.*" -g "!bin/**" -g "!obj/**"
 rg -n "<TargetFramework>|<AssemblyName>|<RootNamespace>|<TargetName>|<PackageId>|<Version>|<Product>|<Title>|<Company>|<PackageReference|<Target |<Import " `
   -g "*.csproj" -g "*.targets" -g "*.props"
-Get-ChildItem -LiteralPath .github\workflows -File -ErrorAction SilentlyContinue |
+Get-ChildItem -LiteralPath .github\workflows -File -Force -ErrorAction SilentlyContinue |
   Select-Object Name, FullName
-rg -n "on:|push:|pull_request:|tags:|permissions:|runs-on:|dotnet-version|secrets\.[A-Za-z_]+|NUGET|WEBHOOK" `
+rg --hidden -n "on:|push:|pull_request:|tags:|permissions:|runs-on:|dotnet-version|secrets\.[A-Za-z_]+|NUGET|WEBHOOK" `
   .github -g "*.yml" -g "*.yaml"
 rg -n "^\s*(public|protected)\s" -g "*.cs"
 ```
@@ -334,10 +357,10 @@ project merely to match the generated root layout.
 Add the project to the existing solution without discarding existing entries:
 
 ```powershell
-dotnet sln <solution-path> add <test-project-path>
+dotnet sln '<solution-path>' add '<test-project-path>'
 ```
 
-Expected outcome: `dotnet sln <solution-path> list` includes the existing Mod
+Expected outcome: `dotnet sln '<solution-path>' list` includes the existing Mod
 project and the new test project.
 
 The default metadata test verifies assembly and public metadata boundaries. It
@@ -424,8 +447,9 @@ the remaining difference and owner; do not claim the CI migration is complete.
 
 ## Verify and Record Migration Evidence
 
-Record the inventory paths, command outputs, package entries, and any
-`NOT RUN` or `UNVERIFIED` state as migration evidence, then run the local gates:
+Record the inventory paths, deployment-target inspection, command outputs,
+package entries, and any `NOT RUN` or `UNVERIFIED` state as migration evidence.
+Record the paths used by the local gates:
 
 ```powershell
 $solution = '<recorded-solution>'
@@ -436,18 +460,84 @@ $testAssemblyNames = @(
 $packageTargetName = '<recorded-target-name>'
 $zipPath = '<recorded-package-zip>'
 $devFolder = '<recorded-dev-folder>'
-
-dotnet restore $solution
-dotnet build $solution --configuration Release --no-restore -p:Version=1.2.3
-dotnet test $solution --configuration Release --no-build
 ```
 
 Replace all placeholders with the paths recorded during inventory.
 
+### Inspect Deployment Targets Before the First Build
+
+Before the first build, inspect the project files and repository-owned targets
+for deployment operations:
+
+```powershell
+rg --no-ignore --hidden -n -i "<Copy\b|<WriteLinesToFile\b|<Move\b|<RemoveDir\b|<RemoveDirectory\b|<Exec\b|DeployToGame|DevFolder" `
+  -g "*.csproj" -g "*.props" -g "*.targets" `
+  -g "!.git/**" -g "!bin/**" -g "!obj/**"
+```
+
+Read every hit and record its target, trigger, source, destination, and
+condition. Stop before any build if an operation that can copy, write, move, or
+remove a directory can bypass `DeployToGame=true`, a valid `DevFolder`, or the
+recorded destination. There is no safe normal build until that inspection
+proves every game-affecting operation is opt-in.
+
+After the inspection passes, make the first build a disposable probe build.
+Choose a unique path that does not exist yet, create it, verify the evaluated
+default is not true, explicitly disable deployment, and pass the probe as
+`DevFolder`:
+
+```powershell
+$probe = Join-Path ([IO.Path]::GetTempPath()) (
+  "blasmod-deploy-probe-" + [guid]::NewGuid()
+)
+New-Item -ItemType Directory -Path $probe | Out-Null
+dotnet restore $solution
+if ($LASTEXITCODE -ne 0) {
+  throw "Restore failed with exit code $LASTEXITCODE."
+}
+$deployProperty = @(
+  dotnet msbuild $mainProject -p:Configuration=Release `
+    -getProperty:DeployToGame
+) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+  throw "Could not evaluate DeployToGame."
+}
+$defaultDeployToGame = $deployProperty.Trim()
+if ($defaultDeployToGame -and $defaultDeployToGame -ne 'false') {
+  throw "Deployment is not opt-in: DeployToGame defaults to $defaultDeployToGame."
+}
+dotnet build $solution --configuration Release --no-restore --no-incremental `
+  -p:Version=1.2.3 -p:DeployToGame=false -p:DevFolder="$probe"
+if ($LASTEXITCODE -ne 0) {
+  throw "The probe build failed with exit code $LASTEXITCODE."
+}
+$probeEntries = @(
+  Get-ChildItem -LiteralPath $probe -Force -ErrorAction Stop
+)
+if ($probeEntries.Count -ne 0) {
+  throw "The probe build wrote to DevFolder: $($probeEntries.FullName)"
+}
+```
+
+Expected outcome: `DeployToGame` evaluates to empty or `false`, the probe build
+exits with code `0`, and the probe directory remains empty. The directory
+exists before the build, so a target that deploys merely because `DevFolder`
+exists is exposed. The rebuild forces the deployment target to run instead of
+being skipped as up to date. If the probe contains anything, stop; deployment
+is not opt-in.
+
+Only after the probe exits with code `0` and remains empty, run the normal build
+and tests:
+
+```powershell
+dotnet build $solution --configuration Release --no-restore -p:Version=1.2.3 -p:DeployToGame=false
+dotnet test $solution --configuration Release --no-build
+```
+
 Expected outcomes:
 
-- Restore exits with code `0`.
-- The solution build exits with code `0`, including the `net35` project.
+- The probe result above is recorded and successful.
+- The normal solution build exits with code `0`, including the `net35` project.
 - Every test project in the solution exits with code `0`.
 - Test projects recorded outside the solution are run separately and their
   results recorded.
@@ -455,45 +545,6 @@ Expected outcomes:
 
 `$testAssemblyNames` must contain every test assembly recorded during inventory;
 add one entry per test project.
-
-Prove the default build does not touch a game directory. Choose a unique path
-that does not exist yet, create it, verify the evaluated default is not true,
-and pass it as `DevFolder`:
-
-```powershell
-$probe = Join-Path ([IO.Path]::GetTempPath()) (
-  "blasmod-deploy-probe-" + [guid]::NewGuid()
-)
-New-Item -ItemType Directory -Path $probe | Out-Null
-$defaultDeployToGame = (
-  dotnet msbuild $mainProject -p:Configuration=Release `
-    -getProperty:DeployToGame
-).Trim()
-if ($LASTEXITCODE -ne 0) {
-  throw "Could not evaluate DeployToGame."
-}
-if ($defaultDeployToGame -and $defaultDeployToGame -ne 'false') {
-  throw "Deployment is not opt-in: DeployToGame defaults to $defaultDeployToGame."
-}
-dotnet build $solution --configuration Release --no-restore --no-incremental `
-  -p:Version=1.2.3 -p:DevFolder="$probe"
-if ($LASTEXITCODE -ne 0) {
-  throw "The default build failed with exit code $LASTEXITCODE."
-}
-$probeEntries = @(
-  Get-ChildItem -LiteralPath $probe -Force -ErrorAction Stop
-)
-if ($probeEntries.Count -ne 0) {
-  throw "The default build wrote to DevFolder: $($probeEntries.FullName)"
-}
-```
-
-Expected outcome: `DeployToGame` evaluates to empty or `false`, the build exits
-with code `0`, and the probe directory is empty. The directory exists before
-the build, so a target that deploys merely because `DevFolder` exists is
-exposed. The rebuild forces the deployment target to run instead of being
-skipped as up to date. If the probe contains anything, stop: deployment is not
-opt-in.
 
 When formatting configuration is available, verify it:
 
@@ -564,16 +615,16 @@ If development deployment prerequisites are available, run the opt-in check
 and inspect the destination:
 
 ```powershell
-dotnet build $mainProject --configuration Release --no-restore --no-incremental `
+dotnet build $solution --configuration Release --no-restore --no-incremental `
   -p:Version=1.2.3 -p:DeployToGame=true -p:DevFolder="$devFolder"
 ```
 
-Expected outcome: the plugin and intended resources/data artifacts are freshly
-written or updated in the recorded destination. Compare the deployed plugin's
-hash or timestamp with the build output; a pre-existing file alone is not
-evidence. If the prerequisites are unavailable or the owner does not approve
-touching the game profile, record the deployment check as `NOT RUN` with the
-reason and owner.
+Expected outcome: the solution build preserves solution-relative paths, and the
+plugin and intended resources/data artifacts are freshly written or updated in
+the recorded destination. Compare the deployed plugin's hash or timestamp with
+the build output; a pre-existing file alone is not evidence. If the
+prerequisites are unavailable or the owner does not approve touching the game
+profile, record the deployment check as `NOT RUN` with the reason and owner.
 
 ## Optional In-Game Smoke
 
@@ -642,7 +693,43 @@ force-push, and destructive cleanup are not valid migration recovery.
 
 Restore changes contents and therefore requires explicit approval for the exact
 backup path and target path. In a new PowerShell session, re-create `$repo`,
-`$backupRoot`, `$backup`, and `Get-RepositoryManifest` from the backup section.
+`$containingRoot`, `$backupRoot`, `$backup`, `Test-IsWithin`,
+`Assert-NoReparsePointAncestor`, and `Get-RepositoryManifest` from the backup
+section. Repeat the path safety checks before reading or changing target
+contents:
+
+```powershell
+Assert-NoReparsePointAncestor $repo
+Assert-NoReparsePointAncestor $backupRoot
+Assert-NoReparsePointAncestor $backup
+if ($containingRoot) {
+  Assert-NoReparsePointAncestor $containingRoot
+}
+foreach ($candidate in @($backupRoot, $backup)) {
+  if ((Test-IsWithin $candidate $repo) -or (Test-IsWithin $repo $candidate)) {
+    throw "The backup and target repository must not contain each other: $candidate"
+  }
+  if (
+    $containingRoot -and
+    ((Test-IsWithin $candidate $containingRoot) -or
+      (Test-IsWithin $containingRoot $candidate))
+  ) {
+    throw "The backup must not overlap the containing worktree: $candidate"
+  }
+}
+if (-not (Test-Path -LiteralPath $backup -PathType Container)) {
+  throw "The approved backup directory does not exist: $backup"
+}
+$links = @(
+  Get-ChildItem -LiteralPath $repo -Recurse -Force |
+    Where-Object {
+      ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+    }
+)
+if ($links.Count -ne 0) {
+  throw "Resolve repository reparse points before restore: $($links.FullName)"
+}
+```
 
 1. Verify the backup against the persisted reference manifest and stop if it
    fails:
@@ -747,7 +834,11 @@ do not continue changing the repository.
 
 Use only when the user explicitly approves a narrowed scope. Record every check
 retained as `PARTIAL`; a named follow-up does not replace that approval. A
-partial check is not a completed migration.
+partial check is not a completed migration. This is a migration-run state,
+not a GitHub issue-closure state. Issue closure follows the repository's
+delivery rules and requires the exact HEAD plus matching evidence, or an
+explicitly permitted closure state; a migration-local `PARTIAL` cannot supply
+either.
 
 ## Completion Checklist
 
@@ -773,9 +864,13 @@ The migration is complete only when all applicable checks pass:
   present, non-packable, and not part of the Mod Package.
 - [ ] Restore, `net35` build, recorded tests, package inspection, solution
   membership, and public-surface comparison pass.
-- [ ] The default build evaluates `DeployToGame` as empty or `false` and leaves
-  the deployment probe empty. The explicit opt-in deployment check writes fresh
-  output, or is recorded as `NOT RUN` with reason and owner.
+- [ ] Deployment targets were inspected before the first build; no copy, write,
+  move, or directory-removal operation can bypass `DeployToGame` and
+  `DevFolder`.
+- [ ] The first build explicitly set `DeployToGame=false` against an isolated
+  probe and left it empty; the normal build and tests ran afterward. The
+  explicit opt-in deployment check writes fresh output, or is recorded as
+  `NOT RUN` with reason and owner.
 - [ ] Format checks pass when available, or are recorded as `NOT RUN` with
   reason and owner.
 - [ ] Existing workflow semantics and secret names/scopes were inventoried
