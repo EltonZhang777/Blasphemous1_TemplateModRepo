@@ -14,7 +14,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 from path_safety import disposable_dotnet_test
-from workflow_contract import assert_nuget_release_guards, workflow_step
+from workflow_contract import (
+    assert_nuget_release_guards,
+    assert_supported_workflow_actions,
+    workflow_step,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -492,6 +496,14 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue((workflow_dir / "build.yml").is_file())
         self.assertTrue((workflow_dir / "release.yml").is_file())
         self.assertTrue((workflow_dir / "discord.yml").is_file())
+        self.assertEqual(
+            assert_supported_workflow_actions(output),
+            (
+                workflow_dir / "build.yml",
+                workflow_dir / "discord.yml",
+                workflow_dir / "release.yml",
+            ),
+        )
         self.assertTrue((output / "scripts" / "check-crlf.ps1").is_file())
 
         build_workflow = (workflow_dir / "build.yml").read_text(encoding="utf-8")
