@@ -171,7 +171,7 @@ restore, build, and test it:
 
 ```powershell
 Set-Location C:\path\to\Blasphemous.Example
-dotnet restore .\Blasphemous.Example.sln
+dotnet restore .\Blasphemous.Example.sln -p:Configuration=Release
 dotnet build .\Blasphemous.Example.sln --configuration Release --no-restore -p:Version=1.2.3
 dotnet test .\Blasphemous.Example.sln --configuration Release --no-build
 ```

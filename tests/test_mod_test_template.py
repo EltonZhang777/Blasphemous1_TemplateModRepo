@@ -19,6 +19,14 @@ TEMPLATE_PROJECT = (
     / "Blasphemous1.ModTest.Templates.csproj"
 )
 TEMPLATE_README = TEMPLATE_PROJECT.parent / "README.md"
+TEMPLATE_REPO = REPO_ROOT / "TemplateRepo"
+TEMPLATE_PACKAGE_TARGETS = TEMPLATE_REPO / "PackageMod.targets"
+TEMPLATE_TEST_PROJECT = (
+    TEMPLATE_REPO
+    / "Blasphemous.Template.Tests"
+    / "Blasphemous.Template.Tests.csproj"
+)
+WRAPPER = REPO_ROOT / "tools" / "new_blas1mod.py"
 ROOT_README = REPO_ROOT / "README.md"
 ROOT_AGENTS = REPO_ROOT / "AGENTS.md"
 CREATE_GUIDE = REPO_ROOT / "docs" / "create-mod-repository.md"
@@ -33,10 +41,12 @@ def local_link_targets(document):
         for match in MARKDOWN_LOCAL_LINK.finditer(line):
             relative_path, _, anchor = match.group(1).partition("#")
             if relative_path:
-                target = document.parent / relative_path
+                path = Path(relative_path)
+                target = document.parent / path
             else:
+                path = None
                 target = document
-            yield target, anchor
+            yield path, target, anchor
 
 
 def heading_anchors(document):
@@ -97,8 +107,13 @@ def assert_ordered(test_case, text, markers):
 
 def assert_local_links_resolve(test_case, sources):
     for source in sources:
-        for target, anchor in local_link_targets(source):
+        for relative_path, target, anchor in local_link_targets(source):
             with test_case.subTest(source=source.name, target=str(target)):
+                if relative_path is not None:
+                    test_case.assertFalse(relative_path.is_absolute())
+                test_case.assertTrue(
+                    target.resolve().is_relative_to(REPO_ROOT.resolve())
+                )
                 test_case.assertTrue(target.exists())
                 if anchor:
                     test_case.assertIn(anchor, heading_anchors(target))
@@ -426,7 +441,10 @@ class RootDocumentationTests(unittest.TestCase):
                 r"<RemoveDir\b",
                 r"<RemoveDirectory\b",
                 r"<Exec\b",
-                "dotnet restore $solution",
+                r"<Import\b",
+                r"<UsingTask\b",
+                "dotnet restore $solution -p:Configuration=Release",
+                "dotnet msbuild $mainProject",
                 '-p:DeployToGame=false -p:DevFolder="$probe"',
                 "$probeEntries.Count -ne 0",
                 "dotnet build $solution --configuration Release --no-restore "
@@ -501,11 +519,37 @@ class RootDocumentationTests(unittest.TestCase):
         for marker in (
             "rg --files --hidden",
             "Get-ChildItem -LiteralPath .github\\workflows -File -Force",
+            "| Module boundaries |",
             "dotnet sln '<solution-path>' add '<test-project-path>'",
             "dotnet sln '<solution-path>' list",
         ):
             self.assertIn(marker, text)
         self.assertNotIn("dotnet sln <solution-path>", text)
+
+    def test_git_recovery_and_revert_are_approval_gated(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        git_recovery = markdown_section(
+            MIGRATION_GUIDE,
+            "### Git repository",
+            "### Non-Git repository",
+        )
+        after_merge = markdown_section(
+            MIGRATION_GUIDE,
+            "### After merge",
+            "### Non-Git restore",
+        )
+
+        self.assertIn("verified external backup", git_recovery)
+        self.assertIn("A branch and SHA do not restore", git_recovery)
+        self.assertIn("git revert --no-commit -m 1 '<merge-commit>'", after_merge)
+        self.assertIn(
+            "git revert --no-commit '<squash-commit>'",
+            after_merge,
+        )
+        self.assertIn("git diff --cached", after_merge)
+        self.assertIn("Request separate explicit approval", after_merge)
+        self.assertNotIn("git revert -m 1 '<merge-commit>'", after_merge)
+        self.assertIn("correct one-commit, squash, or merge revert path", text)
 
     def test_migration_partial_is_not_ticket_closure(self):
         text = MIGRATION_GUIDE.read_text(encoding="utf-8")
@@ -531,6 +575,27 @@ class RootDocumentationTests(unittest.TestCase):
         self.assertIn("plugins/Blasphemous.Example.TestMod.dll", text)
         self.assertNotIn("plugins\\Example.dll", text)
         self.assertNotIn("plugins\\Blasphemous.Example.TestMod.dll", text)
+        self.assertIn(
+            "dotnet restore .\\Blasphemous.Example.sln -p:Configuration=Release",
+            text,
+        )
+
+        package_targets = TEMPLATE_PACKAGE_TARGETS.read_text(encoding="utf-8")
+        self.assertIn("resources\\**\\*.*", package_targets)
+        self.assertIn(
+            "DestinationFolder=\"$(PackageStagingFolder)\\plugins\"",
+            package_targets,
+        )
+
+        test_project = TEMPLATE_TEST_PROJECT.read_text(encoding="utf-8")
+        self.assertIn("<TargetFramework>net48</TargetFramework>", test_project)
+        self.assertIn("<IsPackable>false</IsPackable>", test_project)
+
+        wrapper = WRAPPER.read_text(encoding="utf-8")
+        self.assertIn('REQUIRED_VERSION = "1.4.1"', wrapper)
+        self.assertIn('DEFAULT_GAME_VERSION = "4.0.67"', wrapper)
+        self.assertIn("Blasphemous.Modding.Templates::1.4.1", text)
+        self.assertIn("--game-version 4.0.67", text)
 
     def test_user_and_maintainer_ownership_boundary(self):
         readme = ROOT_README.read_text(encoding="utf-8")
@@ -569,6 +634,11 @@ class RootDocumentationTests(unittest.TestCase):
             readme,
         )
         self.assertIn("[LICENSE](LICENSE)", readme)
+        self.assertIn("standalone `Blasphemous1.ModTest.Templates`", readme)
+        self.assertIn(
+            "Templates/Blasphemous1.ModTest.Templates/README.md",
+            readme,
+        )
         for marker in (
             "dotnet new install Blasphemous.Modding.Templates",
             "dotnet pack .\\Templates",
@@ -609,6 +679,8 @@ class RootDocumentationTests(unittest.TestCase):
             "docs/adr/",
             "AGENTS.local.md",
             "Templates/Blasphemous1.ModTest.Templates/README.md",
+            ".github/workflows/release.yml",
+            "trusted publishing",
         ):
             self.assertIn(marker, agents)
         self.assertNotIn("](AGENTS.local.md)", agents)

@@ -89,6 +89,13 @@ ask the repository owner to preserve or commit those changes. Do not use
 `git reset`, `git reset --hard`, `git clean`, or destructive checkout commands
 to make the repository appear clean.
 
+Before editing, copy any ignored or untracked file the migration may touch to a
+verified external backup outside the repository and any containing worktree.
+At minimum, protect `AGENTS.local.md`, local `NuGet.Config`, deployment
+settings, and generated local files. A branch and SHA do not restore ignored or
+untracked files. Record each copied relative path and SHA-256 hash, then verify
+the backup before editing.
+
 After the owner confirms the starting state, create a dedicated migration
 branch from that exact SHA:
 
@@ -274,6 +281,7 @@ Complete this inventory:
 | Recovery | Git branch and exact start SHA, or verified backup path |
 | Solution and projects | Solution path, project paths, nesting, target frameworks, build configurations |
 | Mod Identity | Display Title, Author, Machine Identifier, `TargetName`, assembly name, root namespace, project/solution/test names |
+| Module boundaries | Project or assembly responsibilities, dependencies between modules, shared libraries, and externally consumed entry points |
 | Public contract | Public namespaces, types, methods, events, enum values, implicit interface members, configuration keys, `BepInDependency` IDs |
 | Package identity | Product/Title, Authors/Company, package ID, version, repository URL, package references |
 | Resources | Resource roots, expected package paths, data DLLs or other shipped files |
@@ -435,9 +443,10 @@ generated baseline, including a non-Windows runner, an older SDK, combined
 build/release logic, and release steps in a single file. These are evidence to
 reconcile, not files to overwrite blindly.
 
-Run local restore, build, test, format, package, and deployment gates before
-replacing CI. Wait for explicit user approval before editing workflow or
-release files. Preserve intentional release and deployment differences
+Do not replace CI in this step. After completing the verification below, run
+the required local restore, build, test, format, package, and deployment gates
+before replacing CI. Wait for explicit user approval before editing workflow
+or release files. Preserve intentional release and deployment differences
 explicitly. The generated Windows .NET 10 workflows are the target contract
 only after the required local gates pass.
 
@@ -470,16 +479,20 @@ Before the first build, inspect the project files and repository-owned targets
 for deployment operations:
 
 ```powershell
-rg --no-ignore --hidden -n -i "<Copy\b|<WriteLinesToFile\b|<Move\b|<RemoveDir\b|<RemoveDirectory\b|<Exec\b|DeployToGame|DevFolder" `
+rg --no-ignore --hidden -n -i "<Copy\b|<WriteLinesToFile\b|<Move\b|<RemoveDir\b|<RemoveDirectory\b|<Exec\b|<Import\b|<UsingTask\b|DeployToGame|DevFolder" `
   -g "*.csproj" -g "*.props" -g "*.targets" `
+  -g "*.ps1" -g "*.cmd" -g "*.bat" `
   -g "!.git/**" -g "!bin/**" -g "!obj/**"
 ```
 
 Read every hit and record its target, trigger, source, destination, and
-condition. Stop before any build if an operation that can copy, write, move, or
-remove a directory can bypass `DeployToGame=true`, a valid `DevFolder`, or the
-recorded destination. There is no safe normal build until that inspection
-proves every game-affecting operation is opt-in.
+condition. Follow every `<Import>` and `<UsingTask>` to the resolved target or
+task implementation. The search is a starting point, not proof by itself. Stop
+before any build if an operation that can copy, write, move, or remove a
+directory can bypass `DeployToGame=true`, a valid `DevFolder`, or the recorded
+destination, or if any import cannot be resolved. Do not run a normal build
+until inspection and the probe below show that game-affecting operations are
+opt-in.
 
 After the inspection passes, make the first build a disposable probe build.
 Choose a unique path that does not exist yet, create it, verify the evaluated
@@ -491,7 +504,7 @@ $probe = Join-Path ([IO.Path]::GetTempPath()) (
   "blasmod-deploy-probe-" + [guid]::NewGuid()
 )
 New-Item -ItemType Directory -Path $probe | Out-Null
-dotnet restore $solution
+dotnet restore $solution -p:Configuration=Release
 if ($LASTEXITCODE -ne 0) {
   throw "Restore failed with exit code $LASTEXITCODE."
 }
@@ -664,29 +677,39 @@ output with the ignored-file inventory recorded before migration. Record and
 move migration-only untracked, generated, or newly ignored paths to a quarantine
 location with explicit approval; do not delete them permanently and do not use
 `git clean`. If the switch refuses because untracked files would be overwritten,
-stop and ask the owner. Compare the printed SHA with the original SHA recorded
-before migration.
+stop and ask the owner. Restore any ignored or untracked files that migration
+touched from the verified local backup. Compare the printed SHA with the
+original SHA recorded before migration.
 
 ### After merge
 
-For a migration merged through a merge commit, confirm the mainline parent and
-revert the merge:
+Run rollback from the branch that received the work. For a migration merged
+through a merge commit, confirm the mainline parent and prepare the revert
+without committing:
 
 ```powershell
 git show --no-patch --format=%P '<merge-commit>'
-git revert -m 1 '<merge-commit>'
+git revert --no-commit -m 1 '<merge-commit>'
 ```
 
 Use `-m 1` only when the first parent is the branch that received the merge;
 otherwise stop and confirm the mainline parent with the owner. For a linear
-migration with multiple commits and no merge commit, revert the whole range:
+migration with multiple commits and no merge commit, revert the whole range
+without committing:
 
 ```powershell
 git revert --no-commit '<oldest-migration-commit>^..<newest-migration-commit>'
-git commit -m "revert: remove template migration"
 ```
 
-Review and validate the revert against the original starting SHA. Reset-hard,
+For a migration squashed into one non-merge commit, revert that single commit:
+
+```powershell
+git revert --no-commit '<squash-commit>'
+```
+
+Review `git status --short` and `git diff --cached` against the original
+starting SHA. Request separate explicit approval before creating the revert
+commit, then run `git commit -m "revert: remove template migration"`. Reset-hard,
 force-push, and destructive cleanup are not valid migration recovery.
 
 ### Non-Git restore
@@ -850,6 +873,8 @@ The migration is complete only when all applicable checks pass:
 - [ ] A clean Git branch was created from the exact recorded SHA, or a complete
   external backup outside the target and containing worktree was verified
   before the first edit.
+- [ ] Ignored or untracked files that migration may touch were backed up before
+  the first edit and restored when necessary.
 - [ ] The inventory covers identity, layout, public surfaces, package
   contracts, resources, deployment, CI, secrets, generated files, and ignored
   files.
@@ -878,8 +903,8 @@ The migration is complete only when all applicable checks pass:
 - [ ] In-game smoke is recorded with evidence, or as `NOT RUN` with reason and
   owner.
 - [ ] Git rollback records the branch switch, newly untracked/ignored paths, and
-  the correct one-commit or merge revert path, or non-Git restore covers
-  added/modified/deleted files with the required approval.
+  the correct one-commit, squash, or merge revert path, or non-Git restore
+  covers added/modified/deleted files with the required approval.
 - [ ] Backup restore is recorded as `TESTED` with evidence, or as `NOT RUN`
   with reason and owner.
 - [ ] No reset-hard, force-push, destructive cleanup, or permanent deletion was

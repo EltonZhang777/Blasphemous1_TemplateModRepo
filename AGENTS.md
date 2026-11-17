@@ -86,6 +86,12 @@ dotnet new blasmodtest -n Blasphemous.Example.TestMod `
 dotnet sln add .\Blasphemous.Example.TestMod\Blasphemous.Example.TestMod.csproj
 ```
 
+Publication is owned by
+[`.github/workflows/release.yml`](.github/workflows/release.yml). An eligible
+SemVer tag on `main` validates and packs `Blasphemous1.ModTest.Templates`, then
+publishes it with trusted publishing when `NUGET_USERNAME` is configured. Do
+not publish manually or record secret values.
+
 See the
 [Test Template Package README](Templates/Blasphemous1.ModTest.Templates/README.md)
 for target-project behavior.
