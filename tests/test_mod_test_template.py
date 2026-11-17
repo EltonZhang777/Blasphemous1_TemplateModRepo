@@ -546,7 +546,10 @@ class RootDocumentationTests(unittest.TestCase):
             "git revert --no-commit '<squash-commit>'",
             after_merge,
         )
-        self.assertIn("git diff --cached", after_merge)
+        self.assertIn(
+            "git diff --cached '<recorded-start-sha>' --",
+            after_merge,
+        )
         self.assertIn("Request separate explicit approval", after_merge)
         self.assertNotIn("git revert -m 1 '<merge-commit>'", after_merge)
         self.assertIn("correct one-commit, squash, or merge revert path", text)
@@ -560,7 +563,7 @@ class RootDocumentationTests(unittest.TestCase):
             text,
         )
 
-    def test_creation_guide_matches_generated_output(self):
+    def test_creation_guide_claims_match_template_sources(self):
         text = CREATE_GUIDE.read_text(encoding="utf-8")
         expected_result = markdown_section(
             CREATE_GUIDE,
@@ -596,6 +599,25 @@ class RootDocumentationTests(unittest.TestCase):
         self.assertIn('DEFAULT_GAME_VERSION = "4.0.67"', wrapper)
         self.assertIn("Blasphemous.Modding.Templates::1.4.1", text)
         self.assertIn("--game-version 4.0.67", text)
+
+    def test_migration_guide_matches_template_and_representative_shape(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        package_targets = TEMPLATE_PACKAGE_TARGETS.read_text(encoding="utf-8")
+        test_project = TEMPLATE_TEST_PROJECT.read_text(encoding="utf-8")
+
+        self.assertIn("$(TargetName).zip", package_targets)
+        self.assertIn("<TargetFramework>net48</TargetFramework>", test_project)
+        self.assertIn("<IsPackable>false</IsPackable>", test_project)
+
+        for marker in (
+            "plugins/<TargetName>.dll",
+            "No Automated Test Project or test assembly",
+            "`net48` xUnit Automated Test Project",
+            "`net35` project in a subdirectory of a",
+            "no adjacent Automated Test Project",
+            "inline build and deployment",
+        ):
+            self.assertIn(marker, text)
 
     def test_user_and_maintainer_ownership_boundary(self):
         readme = ROOT_README.read_text(encoding="utf-8")
@@ -635,10 +657,6 @@ class RootDocumentationTests(unittest.TestCase):
         )
         self.assertIn("[LICENSE](LICENSE)", readme)
         self.assertIn("standalone `Blasphemous1.ModTest.Templates`", readme)
-        self.assertIn(
-            "Templates/Blasphemous1.ModTest.Templates/README.md",
-            readme,
-        )
         for marker in (
             "dotnet new install Blasphemous.Modding.Templates",
             "dotnet pack .\\Templates",

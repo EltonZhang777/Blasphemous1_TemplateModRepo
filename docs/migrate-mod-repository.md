@@ -707,10 +707,11 @@ For a migration squashed into one non-merge commit, revert that single commit:
 git revert --no-commit '<squash-commit>'
 ```
 
-Review `git status --short` and `git diff --cached` against the original
-starting SHA. Request separate explicit approval before creating the revert
-commit, then run `git commit -m "revert: remove template migration"`. Reset-hard,
-force-push, and destructive cleanup are not valid migration recovery.
+Review `git status --short` and `git diff --cached '<recorded-start-sha>' --`
+against the original starting SHA. Request separate explicit approval before
+creating the revert commit, then run
+`git commit -m "revert: remove template migration"`. Reset-hard, force-push,
+and destructive cleanup are not valid migration recovery.
 
 ### Non-Git restore
 

@@ -6,8 +6,7 @@ existing repository in place while preserving its Mod Identity and layout.
 
 This repository also maintains the standalone `Blasphemous1.ModTest.Templates`
 package, which adds a Verification Mod to an existing repository; that project
-is separate from the generated Mod and its main Mod Package. See the
-[Test Template Package README](Templates/Blasphemous1.ModTest.Templates/README.md).
+is separate from the generated Mod and its main Mod Package.
 
 ## Clone the Repository
 
