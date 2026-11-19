@@ -11,6 +11,9 @@ from workflow_contract import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate.yml"
+SPEC_VALIDATE_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "spec-validate.yml"
+)
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 
 
@@ -22,6 +25,7 @@ class RepositoryWorkflowTests(unittest.TestCase):
             {path.relative_to(REPO_ROOT).as_posix() for path in workflows},
             {
                 ".github/workflows/release.yml",
+                ".github/workflows/spec-validate.yml",
                 ".github/workflows/validate.yml",
                 "TemplateRepo/.github/workflows/build.yml",
                 "TemplateRepo/.github/workflows/discord.yml",
@@ -65,6 +69,9 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("contents: read", workflow)
         self.assertNotIn("contents: write", workflow)
         self.assertNotIn("id-token: write", workflow)
+        self.assertIn("Verify checkout HEAD matches event SHA", workflow)
+        self.assertIn("git rev-parse HEAD", workflow)
+        self.assertIn("$env:GITHUB_SHA", workflow)
         self.assertIn("windows-latest", workflow)
         self.assertIn("dotnet-version: 10.0.x", workflow)
         self.assertIn("python-version: 3.9", workflow)
@@ -81,6 +88,33 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("BLAS1_TEMPLATE_PACKAGE", workflow)
         self.assertIn("BLAS1_WRONG_TEMPLATE_PACKAGE", workflow)
         self.assertIn("python -m unittest discover -s tests -v", workflow)
+        self.assertIn("Record validation evidence", workflow)
+        self.assertIn("$env:GITHUB_RUN_ID", workflow)
+        self.assertIn("$env:GITHUB_STEP_SUMMARY", workflow)
+        self.assertLess(
+            workflow.index("Checkout Repository"),
+            workflow.index("Verify checkout HEAD matches event SHA"),
+        )
+        self.assertLess(
+            workflow.index("Verify checkout HEAD matches event SHA"),
+            workflow.index("Download official template packages"),
+        )
+        self.assertLess(
+            workflow.index("Run tests"),
+            workflow.index("Record validation evidence"),
+        )
+
+    def test_spec_validation_workflow_contract(self):
+        workflow = SPEC_VALIDATE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("push:", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertIn('      - "spec-ci/**"', workflow)
+        self.assertIn("uses: ./.github/workflows/validate.yml", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("concurrency:", workflow)
 
     def test_release_workflow_contract(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
