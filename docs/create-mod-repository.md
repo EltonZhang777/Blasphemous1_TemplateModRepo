@@ -1,8 +1,6 @@
 # Create a Blasphemous 1 Mod Repository
 
-This guide takes you from a checkout of this repository to a generated and
-verified Blasphemous 1 Mod repository. The Generator Command creates the
-output only after generation and validation succeed.
+This guide takes you from a checkout of this repository to a generated and verified Blasphemous 1 Mod repository. The Generator Command creates the output only after generation and validation succeed.
 
 ## Prerequisites
 
@@ -13,8 +11,7 @@ Use a Windows machine with:
 - Git, if you still need to clone this repository.
 - Access to NuGet when restoring the generated solution.
 
-Open a new PowerShell window after installing a tool, then verify all required
-commands:
+Open a new PowerShell window after installing a tool, then verify all required commands:
 
 ```powershell
 [System.Environment]::OSVersion.Version
@@ -30,8 +27,7 @@ Expected outcomes:
 - `python --version` reports Python 3.9 or later.
 - `git --version` reports an installed Git client.
 
-The supported creation environment is Windows with .NET SDK 10. Linux and
-macOS are not part of this creation path.
+The supported creation environment is Windows with .NET SDK 10. Linux and macOS are not part of this creation path.
 
 ## Install the Official Template Baseline
 
@@ -55,32 +51,25 @@ dotnet new uninstall |
   Select-String -Pattern "Blasphemous.Modding.Templates" -Context 0,3
 ```
 
-Expected output includes `Blasphemous.Modding.Templates` and
-`Version: 1.4.1`. The Generator Command accepts exactly one installed version
-of this package. If another version is also listed, remove the package and
-install the exact baseline again:
+Expected output includes `Blasphemous.Modding.Templates` and `Version: 1.4.1`. The Generator Command accepts exactly one installed version of this package. If another version is also listed, remove the package and install the exact baseline again:
 
 ```powershell
 dotnet new uninstall Blasphemous.Modding.Templates
 dotnet new install Blasphemous.Modding.Templates::1.4.1
 ```
 
-The Generator Command verifies this installation; it does not install or
-update templates for you.
+The Generator Command verifies this installation; it does not install or update templates for you.
 
 ## Create the Mod Repository
 
 Choose the Mod Identity before running the command:
 
-- `--name` is the Machine Identifier. It must contain 2-64 ASCII letters or
-  digits, start with an uppercase letter, and contain no separators.
+- `--name` is the Machine Identifier. It must contain 2-64 ASCII letters or digits, start with an uppercase letter, and contain no separators.
 - `--title` is the Display Title, between 1 and 80 characters after trimming.
 - `--author` is the author name, between 1 and 80 characters after trimming.
 - `--output` is a new directory path.
 
-Do not enter a display title such as `My Mod` in `--name`. The Machine
-Identifier derives `Blasphemous.Example`, `Blasphemous.Example.Tests`, and the
-plugin assembly name `Example`. The Display Title and Author are metadata.
+Do not enter a display title such as `My Mod` in `--name`. The Machine Identifier derives `Blasphemous.Example`, `Blasphemous.Example.Tests`, and the plugin assembly name `Example`. The Display Title and Author are metadata.
 
 From the repository root, run:
 
@@ -93,18 +82,14 @@ python tools/new_blas1mod.py `
   --game-version 4.0.67
 ```
 
-The required inputs are `--name`, `--title`, `--author`, and `--output`.
-The optional inputs are:
+The required inputs are `--name`, `--title`, `--author`, and `--output`. The optional inputs are:
 
 - `--game-version`, which defaults to `4.0.67`.
 - `--with-test-mod`, which adds the optional Verification Mod.
 
-The output path must not already exist. If it exists, the command refuses the
-request and leaves the existing path untouched. If the parent directory does
-not exist, the Generator Command creates it.
+The output path must not already exist. If it exists, the command refuses the request and leaves the existing path untouched. If the parent directory does not exist, the Generator Command creates it.
 
-The command writes to a temporary staging directory next to the output. On
-success, it prints:
+The command writes to a temporary staging directory next to the output. On success, it prints:
 
 ```text
 Created C:\path\to\Blasphemous.Example
@@ -112,17 +97,13 @@ Created C:\path\to\Blasphemous.Example
 
 Only then is the output a completed generated directory.
 
-If generation fails after staging starts, the requested output is not created.
-The command preserves the staging directory and prints a path similar to:
+If generation fails after staging starts, the requested output is not created. The command preserves the staging directory and prints a path similar to:
 
 ```text
 staging preserved at C:\path\to\.Blasphemous.Example-abcd1234.failed
 ```
 
-Inspect that path for the failing files and use the preceding error output for
-diagnosis. Do not treat the preserved staging directory as a completed
-repository. Correct the reported problem, then rerun the command with the
-original output path if it remains absent.
+Inspect that path for the failing files and use the preceding error output for diagnosis. Do not treat the preserved staging directory as a completed repository. Correct the reported problem, then rerun the command with the original output path if it remains absent.
 
 ## Expected Result
 
@@ -157,17 +138,11 @@ Blasphemous.Example/
     `-- discord.yml
 ```
 
-The main project targets `net35`. The adjacent Automated Test Project targets
-`net48`, references the real Mod project, and is not packable. Game deployment
-is disabled by default; a build creates the Mod Package without requiring a
-game installation. `Example.cs` contains the generated Mod class, and `Main.cs`
-contains the startup entry point.
+The main project targets `net35`. The adjacent Automated Test Project targets `net48`, references the real Mod project, and is not packable. Game deployment is disabled by default; a build creates the Mod Package without requiring a game installation. `Example.cs` contains the generated Mod class, and `Main.cs` contains the startup entry point.
 
 ## Verify and Record Creation Evidence
 
-Record the installed baseline version, generated path, command outputs, and
-package entries as creation evidence. Change to the generated directory and
-restore, build, and test it:
+Record the installed baseline version, generated path, command outputs, and package entries as creation evidence. Change to the generated directory and restore, build, and test it:
 
 ```powershell
 Set-Location C:\path\to\Blasphemous.Example
@@ -189,9 +164,7 @@ dotnet format whitespace .\Blasphemous.Example.sln --no-restore --verify-no-chan
 dotnet format style .\Blasphemous.Example.sln --no-restore --severity warn --verify-no-changes
 ```
 
-Both commands must exit with code `0`. If they report changes, run
-`.\dotnet_format.bat .\Blasphemous.Example.sln`, inspect the diff, and run both
-verification commands again.
+Both commands must exit with code `0`. If they report changes, run `.\dotnet_format.bat .\Blasphemous.Example.sln`, inspect the diff, and run both verification commands again.
 
 Create and inspect the main Mod Package:
 
@@ -218,14 +191,11 @@ Expected outcomes:
 - Any files under `resources/` are included in the package.
 - Automated test files and assemblies are absent from the Mod Package.
 
-The package name uses the Machine Identifier; it does not use the Display
-Title.
+The package name uses the Machine Identifier; it does not use the Display Title.
 
 ## Optional Verification Mod
 
-Add `--with-test-mod` to the original creation command when you need an
-in-game Verification Mod. Choose this option before generation because the
-Generator Command refuses an existing output path.
+Add `--with-test-mod` to the original creation command when you need an in-game Verification Mod. Choose this option before generation because the Generator Command refuses an existing output path.
 
 The Verification Mod is a separate `net35` project:
 
@@ -234,20 +204,15 @@ Blasphemous.Example.TestMod/
 `-- Blasphemous.Example.TestMod.csproj
 ```
 
-It is added to the generated solution and remains separate from the main Mod
-Package and NuGet package. A solution build creates:
+It is added to the generated solution and remains separate from the main Mod Package and NuGet package. A solution build creates:
 
 ```text
 Blasphemous.Example.TestMod\publish\Blasphemous.Example.TestMod.zip
 ```
 
-That ZIP contains both `plugins/Blasphemous.Example.TestMod.dll` and the target
-Mod assembly, `plugins/Example.dll`. The main `publish\Example.zip` still
-contains only the main Mod and its resources.
+That ZIP contains both `plugins/Blasphemous.Example.TestMod.dll` and the target Mod assembly, `plugins/Example.dll`. The main `publish\Example.zip` still contains only the main Mod and its resources.
 
-In-game loading is optional and is not part of this creation check. The
-generated Automated Test Project remains the repeatable local verification
-path.
+In-game loading is optional and is not part of this creation check. The generated Automated Test Project remains the repeatable local verification path.
 
 ## Recover from Common Failures
 
@@ -269,10 +234,7 @@ Keep the first failing command and its full output when asking for help.
 
 ## Stop Before Git
 
-This guide stops at a validated generated directory. Do not run `git init`,
-`git add`, `git commit`, `git remote add`, or `git push` as part of creation.
-Repository initialization, remotes, commits, CI configuration, and releases
-are separate decisions outside this guide.
+This guide stops at a validated generated directory. Do not run `git init`, `git add`, `git commit`, `git remote add`, or `git push` as part of creation. Repository initialization, remotes, commits, CI configuration, and releases are separate decisions outside this guide.
 
 ## Completion Checklist
 
@@ -282,17 +244,11 @@ The creation path is complete only when all of these checks pass:
 - [ ] `python --version` reports Python 3.9 or later.
 - [ ] The installed Official Template Baseline is exactly `1.4.1`.
 - [ ] The Generator Command prints `Created ...` for a new output path.
-- [ ] The expected generated project, test, resource, documentation, and
-  workflow files exist.
+- [ ] The expected generated project, test, resource, documentation, and workflow files exist.
 - [ ] Restore, Release build, and Automated Test Project execution succeed.
 - [ ] Both format verification commands succeed.
-- [ ] The Mod Package contains `plugins/Example.dll` and the intended
-  resources, without test assemblies.
-- [ ] If selected, the Verification Mod has its own project and package, and
-  that package is outside the main Mod Package.
-- [ ] No Git initialization, commit, remote creation, or push was performed
-  after generation.
+- [ ] The Mod Package contains `plugins/Example.dll` and the intended resources, without test assemblies.
+- [ ] If selected, the Verification Mod has its own project and package, and that package is outside the main Mod Package.
+- [ ] No Git initialization, commit, remote creation, or push was performed after generation.
 
-If any check fails, preserve the failing output and staging evidence. The
-generated repository is not complete until the failing check is corrected and
-the relevant checks are rerun.
+If any check fails, preserve the failing output and staging evidence. The generated repository is not complete until the failing check is corrected and the relevant checks are rerun.
