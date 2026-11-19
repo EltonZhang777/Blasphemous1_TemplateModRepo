@@ -44,6 +44,16 @@ _Avoid_: automated test project, test fixture
 The `blasmodtest` dotnet template distributed as `Blasphemous1.ModTest.Templates`.
 _Avoid_: template repository, overlay
 
+### Documentation Contexts
+
+**Meta-Repository Documentation**:
+Documentation whose authority, audience, and commands concern the meta-repository rather than a generated Mod repository.
+_Avoid_: shared template documentation, mirrored documentation
+
+**Generated Repository Documentation**:
+Documentation whose authority, audience, and commands concern a generated Mod repository, as a context independent of Meta-Repository Documentation.
+_Avoid_: template documentation copy, mirrored agent documentation
+
 ### Test Environment Safety
 
 **PATH Contamination**:
