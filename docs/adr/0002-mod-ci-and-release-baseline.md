@@ -15,6 +15,7 @@ Generated Mod repositories must verify the Mod and its tests, create a usable Mo
 - Use a `.sln` solution, `windows-latest`, and .NET 10 for generated Mod build, test, and formatting jobs.
 - Keep the Mod at net35 and use a net48 adjacent xUnit project that directly references the Mod.
 - Build and test on `main` pushes and eligible tags. Validate pull requests that target `main`.
+- Keep `test-ci` as a long-term CI branch name. Validate pushes to it and pull requests that target it. Treat the branch as disposable and unprotected: its history and protection state are not guarantees, and no separate branch owner is assigned. Normal repository review maintains this trigger contract.
 - Accept both `v*` and bare SemVer tags. A non-main-ancestor release tag fails.
 - Create a draft release with only the Mod Package ZIP.
 - Publish NuGet with `NuGet/login@v1` and OIDC. The release job has `id-token: write`; pull request jobs do not receive publishing credentials.

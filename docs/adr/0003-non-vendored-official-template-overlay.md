@@ -18,7 +18,7 @@ The previous cloneable-template and custom-initializer design duplicated naming 
 - Do not vendor, embed, or redistribute the official template.
 - Do not install or update the official template automatically.
 - Perform no Git operations in the Generator Command.
-- Provide the Verification Mod as a separate `blasModTest` Test Template Package for existing repositories.
+- Provide the Verification Mod as a separate `blasmodtest` Test Template Package for existing repositories.
 - Reuse the Test Template Package content for the Generator Command's opt-in Verification Mod, while keeping the package independently installable.
 
 ## Consequences

@@ -18,12 +18,13 @@ The real-generation test only checked that both files existed, so either file co
 - Remove the former C# `insert_final_newline = false` override so C# inherits the global `true` policy.
 - Generate exactly 19 ignore rules for build and test output, Visual Studio user state, package output, local development and agent state, certificates, and publish settings.
 - Exclude unrelated language, platform, IDE-plugin, logging, and coverage rules so the policy stays small and auditable.
-- Extend the existing real-generation test with independent content expectations for effective EditorConfig values and the exact ignore-rule list.
+- Reject duplicate EditorConfig sections across the generated `.editorconfig` and duplicate keys within any section before merge.
+- Assert exact key/value sets for the global `[*]` section, the single `[*.cs]` section, and the existing non-C# section. Keep the exact ordered `.gitignore` rule-list assertion.
 
 Certificate and publish-settings rules remain because they prevent accidental staging of local credentials or deployment configuration. The ignore list is curated instead of inheriting a broad Visual Studio ignore file because most of that file covers tools this template does not use.
 
 ## Consequences
 
-Generated C# files receive the established conventions without changing the global or non-C# policies. C# final-newline behavior is the deliberate exception to restoring the former file exactly: it follows the current global policy instead.
+Generated C# files receive the established conventions without changing the global or non-C# policies.
 
-The real-generation test catches missing, extra, duplicate, or changed rules. It does not run `git check-ignore`, so it verifies the configured rule set, not Git's matching behavior. The accepted limitation is sufficient because the rules are intentionally simple and the behavior test would add a separate temporary-repository seam.
+The real-generation test rejects duplicate sections and per-section duplicate keys. It catches missing, extra, or changed keys and values in the checked sections, and it catches changes to the ordered `.gitignore` list. It does not run `git check-ignore`, so it verifies the configured rule set, not Git's matching behavior. The accepted limitation is sufficient because the rules are intentionally simple and the behavior test would add a separate temporary-repository seam.

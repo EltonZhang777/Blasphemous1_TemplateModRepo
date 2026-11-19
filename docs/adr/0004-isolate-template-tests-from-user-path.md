@@ -8,16 +8,15 @@ Accepted
 
 The meta-repository's dotnet template tests create a fresh `DOTNET_CLI_HOME` per test and run `dotnet new install`. `DOTNET_CLI_HOME` isolates template state, but it is not a Windows-user isolation boundary; the .NET CLI can append the Test Hive's `.dotnet\tools` directory to the real user's persistent `HKCU\Environment\Path`. The original incident accumulated 275 temporary hive entries, and the current User PATH still contains 25 repository `.wt` hive entries whose target directories are all missing. The environment block exceeded the Windows limit and caused system-wide `0xC0000017` process-creation failures.
 
-The Generator Command and Test Template Package are Consumer Entry Points, not the polluting test harness. The Generator Command does not install templates or set `DOTNET_CLI_HOME`/PATH; the Test Template Package has no post-actions. A consumer `dotnet new install` may make the .NET CLI's normal one-time default tools entry, but it does not create the repeated Test Hive pattern unless the consumer creates a fresh `DOTNET_CLI_HOME` per invocation.
+The meta-repository test harness is distinct from Consumer Entry Points. This decision covers only the meta-repository test harness; the PATH behavior of the Generator Command, Test Template Package, generated projects, and other Consumer Entry Points is out of scope.
 
 ## Decision
 
 - Run dotnet-backed template tests only in a Disposable Test Context: an ephemeral CI runner, Windows Sandbox, or another disposable VM.
 - On a normal maintainer checkout, skip those tests before the first dotnet invocation and state why.
-- Capture raw User and Machine Path before and after every dotnet-backed test context. A non-disposable host must show zero change; a disposable context must report an exact diff and fail on additions outside the declared Test Hive.
+- Capture a paired PATH Snapshot before and after every dotnet-backed test context. Each snapshot records the raw User and Machine Path, a shared context identifier, its `before` or `after` phase, and a UTC capture time. Take the before snapshot immediately before the context's first dotnet invocation. Take the after snapshot after the test body completes and before the context exits. A snapshot without its pair is not evidence. A non-disposable host must show zero change; a disposable context must report an exact diff and fail on additions outside the declared Test Hive.
 - Never repair, normalize, de-duplicate, or delete persistent PATH entries from a test or build.
 - Keep the existing 25 residual entries as a separate, backed-up, human-approved cleanup; this ADR does not authorize automatic cleanup.
-- Keep consumer wrapper and template behavior unchanged; document that consumers using a custom `DOTNET_CLI_HOME` must use a fixed or disposable context.
 
 ## Considered Options
 
@@ -27,4 +26,4 @@ The Generator Command and Test Template Package are Consumer Entry Points, not t
 
 ## Consequences
 
-Local maintainers lose dotnet-backed template coverage on a normal checkout; they must use Windows Sandbox, CI, or a disposable VM. The test harness must fail closed rather than silently repair PATH. The safety behavior is implemented by ticket #15, while residual cleanup remains a separate operation. Consumer setup still relies on normal .NET CLI behavior and is not promised to be free of the CLI's standard one-time tools-path write.
+Local maintainers lose dotnet-backed template coverage on a normal checkout; they must use Windows Sandbox, CI, or a disposable VM. The test harness must fail closed rather than silently repair PATH. The safety behavior is implemented by [tests/path_safety.py](../../tests/path_safety.py). A PATH Snapshot proves only the sampled User and Machine Persistent PATH values at its capture points; it does not prove atomic reads or process-local PATH.

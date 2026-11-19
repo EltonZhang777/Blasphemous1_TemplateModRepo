@@ -4,8 +4,6 @@
 
 Superseded by [ADR-0003](0003-non-vendored-official-template-overlay.md).
 
-The cloneable-template boundary, manifest, and custom initializer described below are no longer active.
-
 ## Context
 
 The meta-repository contains its own management files and a cloneable Blasphemous 1 Mod template. Mixing both sets of files would make it ambiguous which files belong to a new Mod repository.

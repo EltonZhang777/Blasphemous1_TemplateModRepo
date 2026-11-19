@@ -41,7 +41,7 @@ The `net35` Mod generated to load in-game and verify another Mod or prerequisite
 _Avoid_: automated test project, test fixture
 
 **Test Template Package**:
-The `blasModTest` dotnet template distributed as `Blasphemous1.ModTest.Templates`.
+The `blasmodtest` dotnet template distributed as `Blasphemous1.ModTest.Templates`.
 _Avoid_: template repository, overlay
 
 ### Test Environment Safety
