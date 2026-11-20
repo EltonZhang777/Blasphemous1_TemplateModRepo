@@ -91,16 +91,25 @@ def parse_editorconfig(text):
     root_values = {}
     sections = {}
     current = root_values
+    current_section = "<root>"
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith(("#", ";")):
             continue
         if line.startswith("[") and line.endswith("]"):
-            current = sections.setdefault(line, {})
+            if line in sections:
+                raise ValueError(f"Duplicate EditorConfig section {line!r}.")
+            current_section = line
+            current = sections[line] = {}
             continue
         if "=" in line:
             key, value = line.split("=", 1)
-            current[key.strip()] = value.strip()
+            key = key.strip().lower()
+            if key in current:
+                raise ValueError(
+                    f"Duplicate EditorConfig key {key!r} in {current_section}."
+                )
+            current[key] = value.strip().lower()
     return root_values, sections
 
 
@@ -124,6 +133,41 @@ def load_wrapper_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+class EditorConfigParserTests(unittest.TestCase):
+    def test_duplicate_sections_are_rejected_before_merge(self):
+        text = "[*.other]\nfirst = one\n[*.other]\nsecond = two\n"
+
+        with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig section"):
+            parse_editorconfig(text)
+
+    def test_duplicate_keys_within_a_section_are_rejected(self):
+        text = "[*.other]\nindent_size = 2\nindent_size = 4\n"
+
+        with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig key"):
+            parse_editorconfig(text)
+
+    def test_case_variant_duplicate_keys_within_a_section_are_rejected(self):
+        text = "[*.other]\nindent_size = 2\nINDENT_SIZE = 4\n"
+
+        with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig key"):
+            parse_editorconfig(text)
+
+    def test_values_are_normalized_to_lowercase(self):
+        _, sections = parse_editorconfig(
+            "[*.cs]\ninsert_final_newline = TRUE\n"
+        )
+
+        self.assertEqual(sections["[*.cs]"]["insert_final_newline"], "true")
+
+    def test_same_key_in_different_sections_is_valid(self):
+        _, sections = parse_editorconfig(
+            "[*.cs]\nindent_size = 4\n[*.xml]\nindent_size = 2\n"
+        )
+
+        self.assertEqual(sections["[*.cs]"]["indent_size"], "4")
+        self.assertEqual(sections["[*.xml]"]["indent_size"], "2")
 
 
 class WrapperTests(unittest.TestCase):
@@ -562,10 +606,7 @@ class WrapperTests(unittest.TestCase):
             editorconfig_sections["[*]"], EXPECTED_EDITORCONFIG_GLOBAL
         )
         csharp_rules = editorconfig_sections["[*.cs]"]
-        for key, expected in EXPECTED_CSHARP_RULES.items():
-            with self.subTest(editorconfig_rule=key):
-                self.assertEqual(csharp_rules[key], expected)
-        self.assertNotIn("insert_final_newline", csharp_rules)
+        self.assertEqual(csharp_rules, EXPECTED_CSHARP_RULES)
         self.assertEqual(
             editorconfig_value(
                 editorconfig_sections,
