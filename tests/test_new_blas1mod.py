@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from test_mod_test_template import assert_markdown_contract
 from types import SimpleNamespace
 from unittest import mock
 
@@ -156,10 +157,36 @@ class WrapperTests(unittest.TestCase):
             errors="replace",
         )
 
-    def assert_author_readme(self, text, project_name, machine_identifier, title):
+    def assert_author_readme(
+        self,
+        readme,
+        project_name,
+        machine_identifier,
+        title,
+        *,
+        verification_mod_project_exists,
+    ):
+        context = "Generated Repository Documentation"
+        self.assertTrue(
+            readme.is_file(),
+            f"{context}: generated README does not exist: {readme}",
+        )
+        text = readme.read_text(encoding="utf-8")
+        self.assertTrue(
+            text.strip(),
+            f"{context}: generated README is empty: {readme}",
+        )
         lines = text.splitlines()
-        self.assertEqual(lines[0], f"# {title}")
-        self.assertEqual(sum(line.startswith("# ") for line in lines), 1)
+        self.assertEqual(
+            lines[0],
+            f"# {title}",
+            f"{context}: generated README title contract failed",
+        )
+        self.assertEqual(
+            sum(line.startswith("# ") for line in lines),
+            1,
+            f"{context}: generated README must have one top-level heading",
+        )
 
         headings = [
             "## Requirements",
@@ -172,10 +199,20 @@ class WrapperTests(unittest.TestCase):
             "## CI and releases",
         ]
         for heading in headings:
-            self.assertIn(heading, lines)
+            with self.subTest(
+                context=context,
+                contract="generated-readme-heading",
+                heading=heading,
+            ):
+                self.assertIn(
+                    heading,
+                    lines,
+                    f"{context}: missing README heading: {heading}",
+                )
         self.assertEqual(
             [lines.index(heading) for heading in headings],
             sorted(lines.index(heading) for heading in headings),
+            f"{context}: generated README headings are out of order",
         )
 
         required = (
@@ -191,6 +228,12 @@ class WrapperTests(unittest.TestCase):
             "net35",
             "does not require Blasphemous, Unity, or BepInEx",
             ".\\dotnet_format.bat",
+            "changes tracked source files",
+            f"dotnet format whitespace {project_name}.sln --no-restore "
+            "--verify-no-changes",
+            f"dotnet format style {project_name}.sln --no-restore "
+            "--severity warn --verify-no-changes",
+            "read-only validation",
             "-p:DeployToGame=true",
             '-p:DevFolder="C:\\path\\to\\Blasphemous\\Modding"',
             "must already exist",
@@ -200,10 +243,13 @@ class WrapperTests(unittest.TestCase):
             f"publish/{machine_identifier}.zip",
             "entry assembly",
             "relative directory layout",
+            "every file under `resources/`",
+            "including `.gitkeep` when `resources/` is otherwise empty",
             "Automated Test Project outputs are not included",
             "Dependency DLLs are not included",
             f"same `publish/{machine_identifier}.zip` package",
-            "When generated with the optional Verification Mod",
+            f"If `{project_name}.TestMod/{project_name}.TestMod.csproj` exists",
+            "No Verification Mod directory is expected when that project file is absent",
             f"{project_name}.TestMod/publish/{project_name}.TestMod.zip",
             f"plugins/{project_name}.TestMod.dll",
             "STARTUP_READY",
@@ -211,17 +257,34 @@ class WrapperTests(unittest.TestCase):
             "manual in-game verification",
             "SemVer",
             "draft",
+            "replaces the asset in an existing draft",
+            "already published release is refused",
+            "git tag 1.2.3",
+            "git push origin 1.2.3",
             "only the main Mod Package",
             "Windows with .NET 10",
             "builds in Release",
-            "checks formatting",
+            "formatting verification",
+            "[Build workflow](.github/workflows/build.yml)",
+            "[Release workflow](.github/workflows/release.yml)",
             "CRLF",
             "NuGet",
             "Discord",
-            "warn and skip",
+            "warn",
+            "skip",
         )
         for value in required:
-            self.assertIn(value, text)
+            with self.subTest(
+                context=context,
+                contract="generated-readme-required-fact",
+                marker=value,
+            ):
+                self.assertIn(
+                    value,
+                    text,
+                    f"{context}: generated README required fact is missing: "
+                    f"{value}",
+                )
 
         forbidden = (
             "Official Template Baseline",
@@ -232,13 +295,102 @@ class WrapperTests(unittest.TestCase):
             "git clone",
             "## License",
             "## Contributing",
+            "When generated with the optional Verification Mod",
+            "../",
+            "..\\",
+            "Blasphemous1_TemplateModRepo",
+            "tools/new_blas1mod.py",
         )
         for value in forbidden:
-            self.assertNotIn(value, text)
+            with self.subTest(
+                context=context,
+                contract="generated-readme-self-containment",
+                marker=value,
+            ):
+                self.assertNotIn(
+                    value,
+                    text,
+                    f"{context}: generated README contains forbidden "
+                    f"repository dependency: {value}",
+                )
+
+        ordered_command_groups = (
+            (
+                "restore-build-test",
+                (
+                    f"dotnet restore {project_name}.sln",
+                    f"dotnet build {project_name}.sln --no-restore",
+                    f"dotnet test {project_name}.sln --no-build",
+                ),
+            ),
+            (
+                "push-main-create-tag-push-tag",
+                (
+                    "git push origin main",
+                    "git tag 1.2.3",
+                    "git push origin 1.2.3",
+                ),
+            ),
+        )
+        for contract, commands in ordered_command_groups:
+            positions = tuple(text.find(command) for command in commands)
+            with self.subTest(context=context, contract=contract):
+                self.assertNotIn(
+                    -1,
+                    positions,
+                    f"{context}: ordered command is missing for {contract}: "
+                    f"{commands}",
+                )
+                self.assertEqual(
+                    tuple(sorted(positions)),
+                    positions,
+                    f"{context}: commands are out of order for {contract}: "
+                    f"{' -> '.join(commands)}",
+                )
+
+        verification_project = (
+            readme.parent
+            / f"{project_name}.TestMod"
+            / f"{project_name}.TestMod.csproj"
+        )
+        if verification_mod_project_exists is not None:
+            existence_assert = (
+                self.assertTrue
+                if verification_mod_project_exists
+                else self.assertFalse
+            )
+            existence_assert(
+                verification_project.is_file(),
+                f"{context}: Verification Mod project presence does not match "
+                f"the generated repository: {verification_project}",
+            )
+        self.assertNotIn(
+            f"]({project_name}.TestMod",
+            text,
+            f"{context}: Verification Mod directory must not be a mandatory "
+            "local link",
+        )
+        assert_markdown_contract(
+            self,
+            context=context,
+            owner_root=readme.parent,
+            sources=(readme,),
+        )
+        return text
 
     def assert_no_readme_placeholders(self, text):
         for placeholder in README_IDENTITY_PLACEHOLDERS:
-            self.assertNotIn(placeholder, text)
+            with self.subTest(
+                context="Generated Repository Documentation",
+                contract="identity-substitution",
+                placeholder=placeholder,
+            ):
+                self.assertNotIn(
+                    placeholder,
+                    text,
+                    "Generated Repository Documentation: unresolved identity "
+                    f"placeholder: {placeholder}",
+                )
 
     def install_template_package(self, package):
         self.assertEqual(platform.system(), "Windows")
@@ -512,12 +664,13 @@ class WrapperTests(unittest.TestCase):
                     wrapper.validate_machine_identifier(name)
 
     def test_overlay_readme_preserves_author_contract(self):
-        text = (REPO_ROOT / "TemplateRepo" / "README.md").read_text(encoding="utf-8")
+        readme = REPO_ROOT / "TemplateRepo" / "README.md"
         self.assert_author_readme(
-            text,
+            readme,
             "@PROJECT_NAME@",
             "@MACHINE_IDENTIFIER@",
             "@TITLE@",
+            verification_mod_project_exists=None,
         )
 
     @disposable_dotnet_test
@@ -549,7 +702,6 @@ class WrapperTests(unittest.TestCase):
             (output / "Blasphemous.Example.Tests" / "ModMetadataTests.cs").is_file()
         )
         self.assertTrue((output / "resources").is_dir())
-        self.assertTrue((output / "README.md").is_file())
         self.assertTrue((output / "AGENTS.md").is_file())
         self.assertTrue((output / ".editorconfig").is_file())
         self.assertTrue((output / ".gitattributes").is_file())
@@ -712,12 +864,13 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertIn("ModMetadataTests", test_source)
         self.assertIn("typeof(Blasphemous.Example.Example)", test_source)
-        readme_text = (output / "README.md").read_text(encoding="utf-8")
-        self.assert_author_readme(
-            readme_text,
+        readme = output / "README.md"
+        readme_text = self.assert_author_readme(
+            readme,
             "Blasphemous.Example",
             "Example",
             "My Mod Template",
+            verification_mod_project_exists=False,
         )
         self.assert_no_readme_placeholders(readme_text)
         self.assertIn(
@@ -1127,12 +1280,13 @@ class WrapperTests(unittest.TestCase):
         solution_text = (output / f"{project_name}.sln").read_text(
             encoding="utf-8"
         )
-        readme_text = (output / "README.md").read_text(encoding="utf-8")
-        self.assert_author_readme(
-            readme_text,
+        readme = output / "README.md"
+        readme_text = self.assert_author_readme(
+            readme,
             project_name,
             "WithTest",
             title,
+            verification_mod_project_exists=True,
         )
         self.assert_no_readme_placeholders(readme_text)
         main_project_text = (output / f"{project_name}.csproj").read_text(
