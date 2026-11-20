@@ -18,7 +18,6 @@ Use Windows with:
 - A working .NET SDK 10 installation.
 - NuGet access to the feeds recorded in the repository.
 - Python 3.9 or later when generating a clean reference repository.
-- Ripgrep (`rg`) for the read-only inventory commands, or equivalent search commands.
 - Git for the Git recovery path; non-Git repositories do not require it.
 
 Verify the host:
@@ -27,10 +26,9 @@ Verify the host:
 [System.Environment]::OSVersion.Version
 dotnet --version
 python --version
-rg --version
 ```
 
-Expected outcomes are Windows, a `dotnet --version` value starting with `10.`, Python 3.9 or later when needed, and a working `rg`. For a Git repository, also verify `git --version`.
+Expected outcomes are Windows, a `dotnet --version` value starting with `10.`, and Python 3.9 or later when needed. For a Git repository, also verify `git --version`.
 
 Inspect the repository inputs:
 
@@ -262,10 +260,10 @@ Expected outcome: the identity inventory before and after migration matches, or 
 Keep the existing solution and project layout by default. In particular:
 
 - Keep a project that lives in a subdirectory in that subdirectory.
-- Keep solution-relative paths, resource roots, export locations, and build entry points unless a required gate cannot pass otherwise.
+- Keep solution-relative paths, resource roots, export locations, and build entry points.
 - Keep intentional custom build steps, data DLL copies, package layouts, and deployment targets.
 
-Generated-layout parity alone is not a reason to move or rename a project. Use the [Structural Refactor Gate](#structural-refactor-gate) only when a required build, Automated Test Project, package-content, opt-in deployment, or CI-path gate cannot be satisfied in the existing layout.
+Generated-layout parity alone is not a reason to move or rename a project. For any proposed layout refactor, follow the [Structural Refactor Gate](#structural-refactor-gate).
 
 Expected outcome: the pre-edit and post-migration layout inventories match, or the difference links to approved refactor evidence.
 
@@ -348,9 +346,7 @@ Inventory the old workflow before replacing it. Record:
 
 The representative repository can use a different workflow shape from the generated baseline, including a non-Windows runner, an older SDK, combined build/release logic, and release steps in a single file. These are evidence to reconcile, not files to overwrite blindly.
 
-Do not replace CI in this step. After completing the verification below, run the required local restore, build, test, format, package, and deployment gates before replacing CI. Wait for explicit user approval before editing workflow or release files. Preserve intentional release and deployment differences explicitly. The generated Windows .NET 10 workflows are the target contract only after the required local gates pass.
-
-If hosted CI was not run, record it as `UNVERIFIED`. Local success is not hosted-CI evidence. If a workflow replacement is intentionally deferred, record the remaining difference and owner; do not claim the CI migration is complete.
+This phase is inventory only. Do not edit workflow or release files here. The separate [Apply Approved CI and Release Differences](#apply-approved-ci-and-release-differences) phase follows local verification and optional in-game smoke. The generated Windows .NET 10 workflows are a target contract only after the required local gates pass.
 
 ## Verify and Record Migration Evidence
 
@@ -513,6 +509,14 @@ Owner: <person responsible for the remaining check>
 
 If it is run, record the Blasphemous version, Mod build version, prerequisites, scenario, expected behavior, observed behavior, and log or screenshot evidence.
 
+## Apply Approved CI and Release Differences
+
+Begin this phase only after the required local gates in [Verify and Record Migration Evidence](#verify-and-record-migration-evidence) pass and the optional smoke result is recorded. Inventory is not approval. Get explicit user approval for each proposed workflow or release difference, then apply only the differences the user approved. Preserve all other workflow, release, and deployment behavior.
+
+If an approved change affects local behavior, rerun the affected gates immediately. After the final approved workflow or release change is committed, confirm a clean working tree and rerun the complete required local gate set. Keep the resulting evidence outside the repository and record the exact 40-character final HEAD. Bind the local results and any applicable hosted-CI result to that same HEAD.
+
+Run applicable hosted CI against the exact final HEAD; hosted CI passes on that same HEAD only after a successful applicable run. Hosted CI is `UNVERIFIED` until an applicable run succeeds; `UNVERIFIED` cannot satisfy completion. A failed required local or hosted check, or any unapproved required residual gap, uses `BLOCKED — DECISION REQUIRED` under [Stop States](#stop-states). Any later commit invalidates both local and hosted evidence; rerun the complete required local gate set and obtain a successful hosted run on the new exact final HEAD.
+
 ## Rollback
 
 ### Before merge
@@ -668,7 +672,7 @@ Use these stop states exactly:
 
 `BLOCKED — DECISION REQUIRED`
 
-Use when the next required step needs a user decision, including approval of a structural refactor or an external-contract rename. Preserve the branch or backup, record the evidence, and stop before dependent edits.
+Use when a required local or hosted check fails, an unapproved required residual gap remains, or the next step needs a user decision, including approval of a structural refactor or an external-contract rename. Preserve the branch or backup, record the evidence, and stop before dependent edits.
 
 `UNSUPPORTED FOR THIS MIGRATION RUN`
 
@@ -676,27 +680,29 @@ Use when the supported-input boundary or an infeasible required refactor makes a
 
 `PARTIAL`
 
-Use only when the user explicitly approves a narrowed scope. Record every check retained as `PARTIAL`; a named follow-up does not replace that approval. A partial check is not a completed migration. This is a migration-run state, not a GitHub issue-closure state. Issue closure follows the repository's delivery rules and requires the exact HEAD plus matching evidence, or an explicitly permitted closure state; a migration-local `PARTIAL` cannot supply either.
+Use only after the user explicitly approves a narrowed scope for a deferred approved replacement, an unavailable required verification, or an unrun restore. Record each remaining check, its owner, and its next action; a named follow-up does not replace approval. `PARTIAL` never means the migration is complete. A migration-local `PARTIAL` does not itself establish completion, closure evidence, or closure eligibility.
 
 ## Completion Checklist
 
-The migration is complete only when all applicable checks pass:
+The migration is complete only when all required local checks pass, approved CI and release differences are applied, applicable hosted CI passes on the exact final 40-character HEAD, and recovery is `TESTED`. `UNVERIFIED` and `PARTIAL` cannot satisfy completion.
 
 - [ ] The repository is within the supported Windows `net35` .NET boundary. If it is not, stop as `UNSUPPORTED FOR THIS MIGRATION RUN`; do not use this checklist as migration completion evidence.
 - [ ] A clean Git branch was created from the exact recorded SHA, or a complete external backup outside the target and containing worktree was verified before the first edit.
 - [ ] Ignored or untracked files that migration may touch were backed up before the first edit and restored when necessary.
 - [ ] The inventory covers identity, layout, public surfaces, package contracts, resources, deployment, CI, secrets, generated files, and ignored files.
 - [ ] Display Title, Author, Machine Identifier, plugin assembly, namespaces, public APIs, package identity, and `BepInDependency` IDs are preserved unless a separate breaking change was approved.
-- [ ] The existing layout is preserved, or a required gate and approved smallest refactor justify the change.
+- [ ] The existing layout is preserved, or any layout refactor satisfies the [Structural Refactor Gate](#structural-refactor-gate).
 - [ ] Required differences are classified and applied; intentional custom behavior is preserved.
 - [ ] Every recorded test project passes; the `net48` Automated Test Project is present, non-packable, and not part of the Mod Package.
 - [ ] Restore, `net35` build, recorded tests, package inspection, solution membership, and public-surface comparison pass.
 - [ ] Deployment targets were inspected before the first build; no copy, write, move, or directory-removal operation can bypass `DeployToGame` and `DevFolder`.
 - [ ] The first build explicitly set `DeployToGame=false` against an isolated probe and left it empty; the normal build and tests ran afterward. The explicit opt-in deployment check writes fresh output, or is recorded as `NOT RUN` with reason and owner.
 - [ ] Format checks pass when available, or are recorded as `NOT RUN` with reason and owner.
-- [ ] Existing workflow semantics and secret names/scopes were inventoried before any replacement; hosted CI is marked `UNVERIFIED` when not run.
+- [ ] Existing workflow semantics and secret names/scopes were inventoried before any replacement; only the differences approved in the separate application phase were applied.
+- [ ] Local evidence and the applicable successful hosted-CI result are stored outside the repository and bound to the same exact 40-character final HEAD; any later commit invalidates both.
+- [ ] Applicable hosted CI passes on the exact final HEAD; until an applicable run succeeds, record `UNVERIFIED` and do not claim completion.
 - [ ] In-game smoke is recorded with evidence, or as `NOT RUN` with reason and owner.
 - [ ] Git rollback records the branch switch, newly untracked/ignored paths, and the correct one-commit, squash, or merge revert path, or non-Git restore covers added/modified/deleted files with the required approval.
-- [ ] Backup restore is recorded as `TESTED` with evidence, or as `NOT RUN` with reason and owner.
+- [ ] Backup restore is recorded as `TESTED` with evidence. `NOT RUN` cannot satisfy completion and is migration-local `PARTIAL` only under the approved-scope rule in Stop States.
 - [ ] No reset-hard, force-push, destructive cleanup, or permanent deletion was used.
 - [ ] No completion is claimed while any required decision or verification remains unresolved.

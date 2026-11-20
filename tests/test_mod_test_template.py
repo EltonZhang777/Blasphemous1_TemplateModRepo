@@ -392,6 +392,7 @@ class RootDocumentationTests(unittest.TestCase):
                 "Reconcile CI and Release Semantics",
                 "Verify and Record Migration Evidence",
                 "Optional In-Game Smoke",
+                "Apply Approved CI and Release Differences",
                 "Rollback",
                 "Stop States",
                 "Completion Checklist",
@@ -554,14 +555,122 @@ class RootDocumentationTests(unittest.TestCase):
         self.assertNotIn("git revert -m 1 '<merge-commit>'", after_merge)
         self.assertIn("correct one-commit, squash, or merge revert path", text)
 
-    def test_migration_partial_is_not_ticket_closure(self):
-        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
-
-        self.assertIn("not a GitHub issue-closure state", text)
-        self.assertIn(
-            "requires the exact HEAD plus matching evidence",
-            text,
+    def test_migration_partial_keeps_only_the_closure_boundary(self):
+        stop_states = markdown_section(
+            MIGRATION_GUIDE,
+            "## Stop States",
+            "## Completion Checklist",
         )
+
+        self.assertIn(
+            "migration-local `PARTIAL` does not itself establish completion, "
+            "closure evidence, or closure eligibility",
+            stop_states,
+        )
+        for marker in (
+            "only after the user explicitly approves a narrowed scope",
+            "deferred approved replacement",
+            "unavailable required verification",
+            "unrun restore",
+            "remaining check, its owner, and its next action",
+            "`PARTIAL` never means the migration is complete",
+        ):
+            self.assertIn(marker, stop_states)
+        self.assertNotIn("Issue closure follows", stop_states)
+        self.assertNotIn("explicitly permitted closure state", stop_states)
+
+    def test_migration_ci_application_and_final_head_contract(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        reconciliation = markdown_section(
+            MIGRATION_GUIDE,
+            "## Reconcile CI and Release Semantics",
+            "## Verify and Record Migration Evidence",
+        )
+        application = markdown_section(
+            MIGRATION_GUIDE,
+            "## Apply Approved CI and Release Differences",
+            "## Rollback",
+        )
+        stop_states = markdown_section(
+            MIGRATION_GUIDE,
+            "## Stop States",
+            "## Completion Checklist",
+        )
+
+        self.assertIn("inventory only", reconciliation)
+        self.assertNotIn("run the required local restore", reconciliation)
+        self.assertNotIn("wait for explicit user approval", reconciliation)
+        assert_ordered(
+            self,
+            text,
+            (
+                "## Verify and Record Migration Evidence",
+                "## Optional In-Game Smoke",
+                "## Apply Approved CI and Release Differences",
+                "## Rollback",
+                "## Stop States",
+                "## Completion Checklist",
+            ),
+        )
+        for marker in (
+            "explicit user approval",
+            "only the differences the user approved",
+            "complete required local gate set",
+            "clean working tree",
+            "outside the repository",
+            "exact 40-character final HEAD",
+            "hosted CI passes on that same HEAD",
+            "`UNVERIFIED` cannot satisfy completion",
+            "Any later commit invalidates both local and hosted evidence",
+            "failed required local or hosted check",
+            "unapproved required residual gap",
+        ):
+            self.assertIn(marker, application)
+        for marker in (
+            "BLOCKED — DECISION REQUIRED",
+            "remaining check",
+            "owner",
+            "next action",
+        ):
+            self.assertIn(marker, stop_states)
+
+    def test_migration_refactor_gate_is_the_single_authority(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        layout = markdown_section(
+            MIGRATION_GUIDE,
+            "## Preserve the Existing Layout",
+            "## Classify Template Differences",
+        )
+        gate = markdown_section(
+            MIGRATION_GUIDE,
+            "## Structural Refactor Gate",
+            "## Reconcile CI and Release Semantics",
+        )
+
+        self.assertIn("[Structural Refactor Gate](#structural-refactor-gate)", layout)
+        self.assertNotIn("only when a required", layout)
+        self.assertEqual(text.count("A layout refactor is eligible only"), 1)
+        for marker in (
+            "The exact command and full failing output",
+            "Wait for explicit user approval",
+            "If the user declines, stop before dependent edits and record `BLOCKED — DECISION REQUIRED`.",
+            "If the required refactor is infeasible, stop and record `UNSUPPORTED FOR THIS MIGRATION RUN`.",
+        ):
+            self.assertIn(marker, gate)
+
+    def test_migration_does_not_require_host_ripgrep(self):
+        supported_inputs = markdown_section(
+            MIGRATION_GUIDE,
+            "## Supported Inputs",
+            "## Record the Starting State and Prepare Recovery",
+        )
+
+        self.assertNotIn("Ripgrep", supported_inputs)
+        self.assertNotIn("rg --version", supported_inputs)
+        self.assertNotIn("a working `rg`", supported_inputs)
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        self.assertNotIn("Ripgrep (`rg`)", text)
+        self.assertNotIn("rg --version", text)
 
     def test_creation_guide_claims_match_template_sources(self):
         text = CREATE_GUIDE.read_text(encoding="utf-8")
