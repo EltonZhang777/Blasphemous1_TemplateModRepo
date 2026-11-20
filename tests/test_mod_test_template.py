@@ -128,6 +128,14 @@ def assert_guide_contract(test_case, guide, root_link, headings):
         test_case.assertIn(f"\n## {heading}\n", prose)
 
 
+def assert_consumer_safety_warning(test_case, section):
+    warning = "custom .NET CLI home"
+    test_case.assertLess(section.index(warning), section.index("dotnet new install"))
+    for marker in ("fixed", "disposable context", "per invocation", "not a guarantee"):
+        with test_case.subTest(marker=marker):
+            test_case.assertIn(marker, section)
+
+
 class ModTestTemplateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -414,11 +422,7 @@ class TemplatePackageDocumentationTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, prerequisites)
 
-        warning = "custom .NET CLI home"
-        self.assertLess(install.index(warning), install.index("dotnet new install"))
-        for marker in ("fixed", "disposable context", "per invocation", "not a guarantee"):
-            with self.subTest(marker=marker):
-                self.assertIn(marker, install)
+        assert_consumer_safety_warning(self, install)
 
         for marker in (
             "--targetProject",
@@ -787,16 +791,7 @@ class RootDocumentationTests(unittest.TestCase):
             "## Install the Official Template Baseline",
             "## Create the Mod Repository",
         )
-        warning = "custom .NET CLI home"
-        self.assertLess(install.index(warning), install.index("dotnet new install"))
-        for marker in (
-            "fixed",
-            "disposable context",
-            "per invocation",
-            "not a guarantee",
-        ):
-            with self.subTest(marker=marker):
-                self.assertIn(marker, install)
+        assert_consumer_safety_warning(self, install)
 
         create = markdown_section(
             CREATE_GUIDE,
@@ -907,6 +902,185 @@ class RootDocumentationTests(unittest.TestCase):
             "inline build and deployment",
         ):
             self.assertIn(marker, text)
+
+    def test_integrated_consumer_documentation_contract(self):
+        root = ROOT_README.read_text(encoding="utf-8")
+        agents = ROOT_AGENTS.read_text(encoding="utf-8")
+        creation = CREATE_GUIDE.read_text(encoding="utf-8")
+        migration = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        package = TEMPLATE_README.read_text(encoding="utf-8")
+
+        root_headings = level_two_headings(ROOT_README)
+        self.assertEqual(1, root_headings.count("Prerequisites"))
+        self.assertEqual(1, root_headings.count("Clone the Repository"))
+        self.assertLess(
+            root_headings.index("Prerequisites"),
+            root_headings.index("Clone the Repository"),
+        )
+        self.assertLess(
+            root_headings.index("Clone the Repository"),
+            root_headings.index("Choose your path"),
+        )
+
+        root_paths = markdown_section(
+            ROOT_README,
+            "## Choose your path",
+            "## Contributing",
+        )
+        create_path = "[Create a new Mod repository](docs/create-mod-repository.md)"
+        migration_path = (
+            "[Migrate an existing Mod repository]"
+            "(docs/migrate-mod-repository.md)"
+        )
+        package_path = (
+            "[Test Template Package verification journey]"
+            "(Templates/Blasphemous1.ModTest.Templates/README.md)"
+        )
+        self.assertLess(root_paths.index(create_path), root_paths.index(migration_path))
+        self.assertLess(root_paths.index(migration_path), root_paths.index(package_path))
+        self.assertIn(
+            "The Generator Command creates new Mod repositories only.",
+            root,
+        )
+        self.assertIn("Existing repositories use the in-place migration path.", root)
+        self.assertIn(
+            "preserves Mod Identity and layout by default and permits only an "
+            "approved structural refactor required by a failing gate",
+            root_paths,
+        )
+        self.assertIn(
+            "- [Test Template Package](Templates/Blasphemous1.ModTest.Templates/"
+            "README.md) is the supported supplemental user-document path",
+            agents,
+        )
+        for product_command in (
+            "dotnet new install",
+            "python tools/new_blas1mod.py",
+            "dotnet new blasmodtest",
+            "dotnet pack",
+            "dotnet sln add",
+        ):
+            with self.subTest(product_command=product_command):
+                self.assertNotIn(product_command, root)
+
+        creation_prerequisites = markdown_section(
+            CREATE_GUIDE,
+            "## Prerequisites",
+            "## Install the Official Template Baseline",
+        )
+        for root_setup_link in (
+            "[common host prerequisites](../README.md#prerequisites)",
+            "[clone this repository](../README.md#clone-the-repository)",
+        ):
+            self.assertIn(root_setup_link, creation_prerequisites)
+        for repeated_setup in (
+            "[System.Environment]::OSVersion.Version",
+            "dotnet --version",
+            "python --version",
+            "git --version",
+            "git clone https://github.com/EltonZhang777/",
+        ):
+            with self.subTest(repeated_setup=repeated_setup):
+                self.assertNotIn(repeated_setup, creation)
+        creation_command = "python tools/new_blas1mod.py"
+        self.assertEqual(1, creation.count(creation_command))
+        self.assertIn("The parameter constraints are:", creation)
+        self.assertEqual(1, creation.count("--with-test-mod"))
+        optional = markdown_section(
+            CREATE_GUIDE,
+            "## Optional Verification Mod",
+            "## Recover from Common Failures",
+        )
+        self.assertIn("--with-test-mod", optional)
+        self.assertIn("Choose this option before generation", optional)
+        self.assertNotIn(creation_command, optional)
+        self.assertNotIn("Linux and macOS", creation)
+        self.assertNotIn("git diff", creation)
+        self.assertNotIn("inspect the diff", creation)
+
+        self.assertIn(
+            "preserves Mod Identity, public contracts, and the existing layout by default",
+            migration,
+        )
+        self.assertIn("Structural Refactor Gate", migration)
+        self.assertIn("git diff --cached", migration)
+
+        package_prerequisites = markdown_section(
+            TEMPLATE_README,
+            "## Prerequisites",
+            "## Install and generate",
+        )
+        for package_prerequisite in (
+            "Windows",
+            ".NET SDK 10",
+            "NuGet access",
+            "existing compatible Blasphemous 1 Mod or class-library repository",
+            "BepInEx",
+            "existing `Modding` folder",
+        ):
+            self.assertIn(package_prerequisite, package_prerequisites)
+        verification = markdown_section(
+            TEMPLATE_README,
+            "## Verify startup in-game",
+            "## What startup proves",
+        )
+        evidence = markdown_section(
+            TEMPLATE_README,
+            "## What startup proves",
+            "## Troubleshooting",
+        )
+        troubleshooting = package.partition("## Troubleshooting")[2]
+        self.assertIn("`[<generated name>] STARTUP_READY`", verification)
+        self.assertIn(
+            "`[Blasphemous.Example.TestMod] STARTUP_READY`",
+            verification,
+        )
+        assert_ordered(
+            self,
+            verification,
+            (
+                "Close Blasphemous 1 and confirm it has exited.",
+                "Rename any existing BepInEx log to a non-colliding backup name.",
+                "Extract the archive directly into the game's `Modding` folder.",
+                "Start Blasphemous 1.",
+                "Wait until loading completes.",
+                "Inspect only the newly created BepInEx log",
+            ),
+        )
+        for evidence_boundary in (
+            "only proves that the Verification Mod reached its startup log",
+            "does not prove the target assembly was loaded",
+            "target public API",
+            "target runtime behavior",
+        ):
+            self.assertIn(evidence_boundary, evidence)
+        for diagnostic in (
+            "archive",
+            "plugins/<generated name>.dll",
+            "plugins` directory",
+            "BepInEx",
+            "new BepInEx log",
+        ):
+            self.assertIn(diagnostic, troubleshooting)
+        self.assertNotIn("STARTUP_READY was observed", package)
+
+        creation_install = markdown_section(
+            CREATE_GUIDE,
+            "## Install the Official Template Baseline",
+            "## Create the Mod Repository",
+        )
+        package_install = markdown_section(
+            TEMPLATE_README,
+            "## Install and generate",
+            "## Reference an existing project",
+        )
+        assert_consumer_safety_warning(self, creation_install)
+        assert_consumer_safety_warning(self, package_install)
+
+        assert_local_links_resolve(
+            self,
+            (ROOT_README, ROOT_AGENTS, CREATE_GUIDE, MIGRATION_GUIDE, TEMPLATE_README),
+        )
 
     def test_user_and_maintainer_ownership_boundary(self):
         readme = ROOT_README.read_text(encoding="utf-8")
