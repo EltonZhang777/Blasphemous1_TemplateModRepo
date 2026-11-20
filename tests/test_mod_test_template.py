@@ -368,6 +368,110 @@ class TemplatePackageDocumentationTests(unittest.TestCase):
         readme = TEMPLATE_README.read_text(encoding="utf-8")
         self.assertIn("dotnet sln add", readme)
 
+    def test_documentation_covers_manual_startup_verification(self):
+        readme = TEMPLATE_README.read_text(encoding="utf-8")
+        prerequisites = markdown_section(
+            TEMPLATE_README,
+            "## Prerequisites",
+            "## Install and generate",
+        )
+        install = markdown_section(
+            TEMPLATE_README,
+            "## Install and generate",
+            "## Reference an existing project",
+        )
+        target_project = markdown_section(
+            TEMPLATE_README,
+            "## Reference an existing project",
+            "## Wire the solution manually",
+        )
+        manual_wiring = markdown_section(
+            TEMPLATE_README,
+            "## Wire the solution manually",
+            "## Verify startup in-game",
+        )
+        verification = markdown_section(
+            TEMPLATE_README,
+            "## Verify startup in-game",
+            "## What startup proves",
+        )
+        startup_evidence = markdown_section(
+            TEMPLATE_README,
+            "## What startup proves",
+            "## Troubleshooting",
+        )
+        troubleshooting = readme.partition("## Troubleshooting")[2]
+
+        for marker in (
+            "Windows",
+            ".NET SDK 10",
+            "NuGet access",
+            "existing compatible Blasphemous 1 Mod or class-library repository",
+            "Blasphemous 1",
+            "BepInEx",
+            "existing `Modding` folder",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, prerequisites)
+
+        warning = "custom .NET CLI home"
+        self.assertLess(install.index(warning), install.index("dotnet new install"))
+        for marker in ("fixed", "disposable context", "per invocation", "not a guarantee"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, install)
+
+        for marker in (
+            "--targetProject",
+            "ProjectReference",
+            "builds the target project",
+            "includes its assembly in the archive below",
+            "does not call target APIs",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, target_project)
+        for marker in (
+            "dotnet build",
+            "`publish\\<project>.zip`",
+            "plugins/",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, manual_wiring)
+        self.assertIn("`[<generated name>] STARTUP_READY`", verification)
+        self.assertIn(
+            "`[Blasphemous.Example.TestMod] STARTUP_READY`",
+            verification,
+        )
+        assert_ordered(
+            self,
+            verification,
+            (
+                "Close Blasphemous 1 and confirm it has exited.",
+                "Rename any existing BepInEx log to a non-colliding backup name.",
+                "Extract the archive directly into the game's `Modding` folder.",
+                "Confirm the generated Verification Mod assembly is in the game's `Modding/plugins` directory.",
+                "Start Blasphemous 1.",
+                "Wait until loading completes.",
+                "Inspect only the newly created BepInEx log",
+            ),
+        )
+        for marker in (
+            "only proves that the Verification Mod reached its startup log",
+            "does not prove the target assembly was loaded",
+            "target public API",
+            "target runtime behavior",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, startup_evidence)
+        for marker in (
+            "archive",
+            "plugins/<generated name>.dll",
+            "Modding` folder's `plugins` directory",
+            "BepInEx",
+            "new BepInEx log",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, troubleshooting)
+
 
 class RootDocumentationTests(unittest.TestCase):
     def test_guides_are_discoverable_and_complete(self):
