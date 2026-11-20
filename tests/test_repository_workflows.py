@@ -1,3 +1,4 @@
+import json
 import re
 import tempfile
 import unittest
@@ -6,15 +7,27 @@ from pathlib import Path
 from workflow_contract import (
     assert_nuget_release_guards,
     assert_supported_workflow_actions,
+    assert_validation_trigger_contract,
 )
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+GLOBAL_JSON = REPO_ROOT / "global.json"
 VALIDATE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate.yml"
+SPEC_VALIDATE_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "spec-validate.yml"
+)
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 
 
 class RepositoryWorkflowTests(unittest.TestCase):
+    def test_dotnet_sdk_is_pinned_to_ten(self):
+        sdk = json.loads(GLOBAL_JSON.read_text(encoding="utf-8"))["sdk"]
+
+        self.assertEqual(sdk["version"], "10.0.100")
+        self.assertEqual(sdk["rollForward"], "latestFeature")
+        self.assertFalse(sdk["allowPrerelease"])
+
     def test_all_workflows_use_supported_external_actions(self):
         workflows = assert_supported_workflow_actions(REPO_ROOT)
 
@@ -22,12 +35,49 @@ class RepositoryWorkflowTests(unittest.TestCase):
             {path.relative_to(REPO_ROOT).as_posix() for path in workflows},
             {
                 ".github/workflows/release.yml",
+                ".github/workflows/spec-validate.yml",
                 ".github/workflows/validate.yml",
                 "TemplateRepo/.github/workflows/build.yml",
                 "TemplateRepo/.github/workflows/discord.yml",
                 "TemplateRepo/.github/workflows/release.yml",
             },
         )
+
+    def test_validation_workflow_trigger_contract(self):
+        workflow = VALIDATE_WORKFLOW.read_text(encoding="utf-8")
+        assert_validation_trigger_contract(workflow)
+
+    def test_validation_workflow_trigger_contract_rejects_bad_branches(self):
+        workflow = (
+            "on:\n"
+            "  pull_request:\n"
+            "    branches: [main, test-ci]\n"
+            "  push:\n"
+            "    branches:\n"
+            "      - main\n"
+            "      - test-ci\n"
+            "jobs:\n"
+        )
+        assert_validation_trigger_contract(workflow)
+        invalid_branch_lists = (
+            "    branches: [main]",
+            "    branches: [main, test-ci, release]",
+            '    branches: [main, "test-ci]',
+        )
+
+        for event, valid_branch_list in (
+            ("pull_request", "    branches: [main, test-ci]\n"),
+            ("push", "    branches:\n      - main\n      - test-ci\n"),
+        ):
+            for invalid_branch_list in invalid_branch_lists:
+                with self.subTest(event=event, branches=invalid_branch_list):
+                    invalid_workflow = workflow.replace(
+                        valid_branch_list,
+                        invalid_branch_list + "\n",
+                        1,
+                    )
+                    with self.assertRaises(AssertionError):
+                        assert_validation_trigger_contract(invalid_workflow)
 
     def test_action_contract_rejects_unknown_and_ignores_local_workflows(self):
         artifacts = REPO_ROOT / "tmp"
@@ -58,13 +108,13 @@ class RepositoryWorkflowTests(unittest.TestCase):
     def test_validation_workflow_contract(self):
         workflow = VALIDATE_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn("pull_request:", workflow)
-        self.assertIn("branches: [main, test-ci]", workflow)
-        self.assertIn("push:", workflow)
         self.assertIn("workflow_call:", workflow)
         self.assertIn("contents: read", workflow)
         self.assertNotIn("contents: write", workflow)
         self.assertNotIn("id-token: write", workflow)
+        self.assertIn("Verify checkout HEAD matches event SHA", workflow)
+        self.assertIn("git rev-parse HEAD", workflow)
+        self.assertIn("$env:GITHUB_SHA", workflow)
         self.assertIn("windows-latest", workflow)
         self.assertIn("dotnet-version: 10.0.x", workflow)
         self.assertIn("python-version: 3.9", workflow)
@@ -81,6 +131,33 @@ class RepositoryWorkflowTests(unittest.TestCase):
         self.assertIn("BLAS1_TEMPLATE_PACKAGE", workflow)
         self.assertIn("BLAS1_WRONG_TEMPLATE_PACKAGE", workflow)
         self.assertIn("python -m unittest discover -s tests -v", workflow)
+        self.assertIn("Record validation evidence", workflow)
+        self.assertIn("$env:GITHUB_RUN_ID", workflow)
+        self.assertIn("$env:GITHUB_STEP_SUMMARY", workflow)
+        self.assertLess(
+            workflow.index("Checkout Repository"),
+            workflow.index("Verify checkout HEAD matches event SHA"),
+        )
+        self.assertLess(
+            workflow.index("Verify checkout HEAD matches event SHA"),
+            workflow.index("Download official template packages"),
+        )
+        self.assertLess(
+            workflow.index("Run tests"),
+            workflow.index("Record validation evidence"),
+        )
+
+    def test_spec_validation_workflow_contract(self):
+        workflow = SPEC_VALIDATE_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("push:", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertIn('      - "spec-ci/**"', workflow)
+        self.assertIn("uses: ./.github/workflows/validate.yml", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("concurrency:", workflow)
 
     def test_release_workflow_contract(self):
         workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")

@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,10 @@ import xml.etree.ElementTree as ET
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from test_mod_test_template import (
+    assert_markdown_contract,
+    wayfinding_prerequisite_clauses,
+)
 from types import SimpleNamespace
 from unittest import mock
 
@@ -48,13 +53,169 @@ EXPECTED_EDITORCONFIG_GLOBAL = {
     "indent_size": "4",
 }
 EXPECTED_CSHARP_RULES = {
-    "dotnet_sort_system_directives_first": "false",
-    "csharp_style_var_elsewhere": "false",
-    "csharp_style_expression_bodied_methods": "when_on_single_line",
-    "csharp_using_directive_placement": "outside_namespace",
-    "dotnet_naming_rule.types_should_be_pascal_case.severity": "suggestion",
-    "csharp_space_after_comma": "true",
+    "csharp_indent_block_contents": "true",
+    "csharp_indent_braces": "false",
+    "csharp_indent_case_contents": "true",
+    "csharp_indent_case_contents_when_block": "true",
+    "csharp_indent_labels": "one_less_than_current",
+    "csharp_indent_switch_labels": "true",
+    "csharp_new_line_before_catch": "true",
+    "csharp_new_line_before_else": "true",
+    "csharp_new_line_before_finally": "true",
+    "csharp_new_line_before_members_in_anonymous_types": "true",
+    "csharp_new_line_before_members_in_object_initializers": "true",
     "csharp_new_line_before_open_brace": "all",
+    "csharp_new_line_between_query_expression_clauses": "true",
+    "csharp_prefer_braces": "true",
+    "csharp_prefer_simple_default_expression": "true",
+    "csharp_prefer_simple_using_statement": "true",
+    "csharp_prefer_static_anonymous_function": "true",
+    "csharp_prefer_static_local_function": "true",
+    "csharp_prefer_system_threading_lock": "true",
+    "csharp_preferred_modifier_order": "public,private,protected,internal,file,static,extern,new,virtual,abstract,closed,sealed,override,readonly,unsafe,required,volatile,async",
+    "csharp_preserve_single_line_blocks": "true",
+    "csharp_preserve_single_line_statements": "true",
+    "csharp_space_after_cast": "false",
+    "csharp_space_after_colon_in_inheritance_clause": "true",
+    "csharp_space_after_comma": "true",
+    "csharp_space_after_dot": "false",
+    "csharp_space_after_keywords_in_control_flow_statements": "true",
+    "csharp_space_after_semicolon_in_for_statement": "true",
+    "csharp_space_around_binary_operators": "before_and_after",
+    "csharp_space_around_declaration_statements": "false",
+    "csharp_space_before_colon_in_inheritance_clause": "true",
+    "csharp_space_before_comma": "false",
+    "csharp_space_before_dot": "false",
+    "csharp_space_before_open_square_brackets": "false",
+    "csharp_space_before_semicolon_in_for_statement": "false",
+    "csharp_space_between_empty_square_brackets": "false",
+    "csharp_space_between_method_call_empty_parameter_list_parentheses": "false",
+    "csharp_space_between_method_call_name_and_opening_parenthesis": "false",
+    "csharp_space_between_method_call_parameter_list_parentheses": "false",
+    "csharp_space_between_method_declaration_empty_parameter_list_parentheses": "false",
+    "csharp_space_between_method_declaration_name_and_open_parenthesis": "false",
+    "csharp_space_between_method_declaration_parameter_list_parentheses": "false",
+    "csharp_space_between_parentheses": "false",
+    "csharp_space_between_square_brackets": "false",
+    "csharp_style_allow_blank_line_after_colon_in_constructor_initializer_experimental": "true",
+    "csharp_style_allow_blank_line_after_token_in_arrow_expression_clause_experimental": "true",
+    "csharp_style_allow_blank_line_after_token_in_conditional_expression_experimental": "false",
+    "csharp_style_allow_blank_lines_between_consecutive_braces_experimental": "false",
+    "csharp_style_allow_embedded_statements_on_same_line_experimental": "false",
+    "csharp_style_conditional_delegate_call": "true",
+    "csharp_style_deconstructed_variable_declaration": "true",
+    "csharp_style_expression_bodied_accessors": "true",
+    "csharp_style_expression_bodied_constructors": "false",
+    "csharp_style_expression_bodied_indexers": "true",
+    "csharp_style_expression_bodied_lambdas": "true",
+    "csharp_style_expression_bodied_local_functions": "false",
+    "csharp_style_expression_bodied_methods": "when_on_single_line",
+    "csharp_style_expression_bodied_operators": "false",
+    "csharp_style_expression_bodied_properties": "true",
+    "csharp_style_implicit_object_creation_when_type_is_apparent": "true",
+    "csharp_style_inlined_variable_declaration": "true",
+    "csharp_style_namespace_declarations": "file_scoped",
+    "csharp_style_pattern_matching_over_as_with_null_check": "true",
+    "csharp_style_pattern_matching_over_is_with_cast_check": "true",
+    "csharp_style_prefer_extended_property_pattern": "true",
+    "csharp_style_prefer_implicitly_typed_lambda_expression": "true",
+    "csharp_style_prefer_index_operator": "true",
+    "csharp_style_prefer_labeled_jump_statements": "true",
+    "csharp_style_prefer_local_over_anonymous_function": "true",
+    "csharp_style_prefer_method_group_conversion": "true",
+    "csharp_style_prefer_not_pattern": "true",
+    "csharp_style_prefer_null_check_over_type_check": "false",
+    "csharp_style_prefer_pattern_matching": "true",
+    "csharp_style_prefer_primary_constructors": "true",
+    "csharp_style_prefer_range_operator": "true",
+    "csharp_style_prefer_readonly_struct": "true",
+    "csharp_style_prefer_readonly_struct_member": "true",
+    "csharp_style_prefer_simple_property_accessors": "true",
+    "csharp_style_prefer_switch_expression": "true",
+    "csharp_style_prefer_top_level_statements": "true",
+    "csharp_style_prefer_tuple_swap": "true",
+    "csharp_style_prefer_unbound_generic_type_in_nameof": "true",
+    "csharp_style_prefer_utf8_string_literals": "true",
+    "csharp_style_throw_expression": "true",
+    "csharp_style_unused_value_assignment_preference": "discard_variable",
+    "csharp_style_unused_value_expression_statement_preference": "discard_variable",
+    "csharp_style_var_elsewhere": "false",
+    "csharp_style_var_for_built_in_types": "false",
+    "csharp_style_var_when_type_is_apparent": "false",
+    "csharp_using_directive_placement": "outside_namespace",
+    "dotnet_code_quality_unused_parameters": "non_public",
+    "dotnet_hide_advanced_members": "false",
+    "dotnet_member_insertion_location": "with_other_members_of_the_same_kind",
+    "dotnet_naming_rule.interface_should_be_begins_with_i.severity": "suggestion",
+    "dotnet_naming_rule.interface_should_be_begins_with_i.style": "begins_with_i",
+    "dotnet_naming_rule.interface_should_be_begins_with_i.symbols": "interface",
+    "dotnet_naming_rule.non_field_members_should_be_pascal_case.severity": "suggestion",
+    "dotnet_naming_rule.non_field_members_should_be_pascal_case.style": "pascal_case",
+    "dotnet_naming_rule.non_field_members_should_be_pascal_case.symbols": "non_field_members",
+    "dotnet_naming_rule.types_should_be_pascal_case.severity": "suggestion",
+    "dotnet_naming_rule.types_should_be_pascal_case.style": "pascal_case",
+    "dotnet_naming_rule.types_should_be_pascal_case.symbols": "types",
+    "dotnet_naming_style.begins_with_i.capitalization": "pascal_case",
+    "dotnet_naming_style.begins_with_i.required_prefix": "i",
+    "dotnet_naming_style.begins_with_i.required_suffix": "",
+    "dotnet_naming_style.begins_with_i.word_separator": "",
+    "dotnet_naming_style.pascal_case.capitalization": "pascal_case",
+    "dotnet_naming_style.pascal_case.required_prefix": "",
+    "dotnet_naming_style.pascal_case.required_suffix": "",
+    "dotnet_naming_style.pascal_case.word_separator": "",
+    "dotnet_naming_symbols.interface.applicable_accessibilities": "public, internal, private, protected, protected_internal, private_protected",
+    "dotnet_naming_symbols.interface.applicable_kinds": "interface",
+    "dotnet_naming_symbols.interface.required_modifiers": "",
+    "dotnet_naming_symbols.non_field_members.applicable_accessibilities": "public, internal, private, protected, protected_internal, private_protected",
+    "dotnet_naming_symbols.non_field_members.applicable_kinds": "property, event, method",
+    "dotnet_naming_symbols.non_field_members.required_modifiers": "",
+    "dotnet_naming_symbols.types.applicable_accessibilities": "public, internal, private, protected, protected_internal, private_protected",
+    "dotnet_naming_symbols.types.applicable_kinds": "class, struct, interface, enum",
+    "dotnet_naming_symbols.types.required_modifiers": "",
+    "dotnet_prefer_system_hash_code": "true",
+    "dotnet_property_generation_behavior": "prefer_throwing_properties",
+    "dotnet_remove_unnecessary_suppression_exclusions": "none",
+    "dotnet_search_reference_assemblies": "true",
+    "dotnet_separate_import_directive_groups": "false",
+    "dotnet_sort_system_directives_first": "false",
+    "dotnet_style_allow_multiple_blank_lines_experimental": "false",
+    "dotnet_style_allow_statement_immediately_after_block_experimental": "true",
+    "dotnet_style_coalesce_expression": "true",
+    "dotnet_style_collection_initializer": "true",
+    "dotnet_style_explicit_tuple_names": "true",
+    "dotnet_style_namespace_match_folder": "true",
+    "dotnet_style_null_propagation": "true",
+    "dotnet_style_object_initializer": "true",
+    "dotnet_style_operator_placement_when_wrapping": "beginning_of_line",
+    "dotnet_style_parentheses_in_arithmetic_binary_operators": "always_for_clarity",
+    "dotnet_style_parentheses_in_other_binary_operators": "always_for_clarity",
+    "dotnet_style_parentheses_in_other_operators": "never_if_unnecessary",
+    "dotnet_style_parentheses_in_relational_binary_operators": "always_for_clarity",
+    "dotnet_style_predefined_type_for_locals_parameters_members": "true",
+    "dotnet_style_predefined_type_for_member_access": "true",
+    "dotnet_style_prefer_auto_properties": "true",
+    "dotnet_style_prefer_collection_expression": "when_types_loosely_match",
+    "dotnet_style_prefer_compound_assignment": "true",
+    "dotnet_style_prefer_conditional_expression_over_assignment": "true",
+    "dotnet_style_prefer_conditional_expression_over_return": "true",
+    "dotnet_style_prefer_foreach_explicit_cast_in_source": "when_strongly_typed",
+    "dotnet_style_prefer_inferred_anonymous_type_member_names": "true",
+    "dotnet_style_prefer_inferred_tuple_names": "true",
+    "dotnet_style_prefer_is_null_check_over_reference_equality_method": "true",
+    "dotnet_style_prefer_non_hidden_explicit_cast_in_source": "true",
+    "dotnet_style_prefer_simplified_boolean_expressions": "true",
+    "dotnet_style_prefer_simplified_interpolation": "true",
+    "dotnet_style_qualification_for_event": "false",
+    "dotnet_style_qualification_for_field": "false",
+    "dotnet_style_qualification_for_method": "false",
+    "dotnet_style_qualification_for_property": "false",
+    "dotnet_style_readonly_field": "true",
+    "dotnet_style_require_accessibility_modifiers": "for_non_interface_members",
+    "end_of_line": "crlf",
+    "file_header_template": "unset",
+    "indent_size": "4",
+    "indent_style": "space",
+    "tab_width": "4",
 }
 EXPECTED_GITIGNORE_RULES = [
     ".vs/",
@@ -85,22 +246,69 @@ README_IDENTITY_PLACEHOLDERS = (
     "@AUTHOR@",
     "@AUTHOR_CSHARP@",
 )
+GENERATED_IDENTITY_PLACEHOLDERS = (
+    *README_IDENTITY_PLACEHOLDERS,
+    "MOD_TITLE_PLACEHOLDER",
+    "MOD_AUTHOR_PLACEHOLDER",
+    "TARGET_PROJECT_PLACEHOLDER",
+    "Blasphemous1.ModTest",
+    "__BLASPHEMOUS_DISPLAY_TITLE__",
+    "__BLASPHEMOUS_AUTHOR__",
+)
+GENERATED_AGENT_DOCUMENTS = (
+    Path("AGENTS.md"),
+    Path("docs/agents/domain.md"),
+    Path("docs/agents/issue-tracker.md"),
+    Path("docs/agents/triage-labels.md"),
+)
+GENERATED_TRIAGE_LABELS = (
+    "needs-triage",
+    "needs-info",
+    "ready-for-agent",
+    "ready-for-human",
+    "wontfix",
+)
+GENERATED_SKILL_ENTRYPOINT = re.compile(r"(?<![\w/])/[a-z][a-z0-9-]+\b")
+WAYFINDING_GOLDEN = """## Wayfinding operations
+
+Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
+
+- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
+- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
+- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
+- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
+- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+"""
+
+
+def normalize_markdown_newlines(text):
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def parse_editorconfig(text):
     root_values = {}
     sections = {}
     current = root_values
+    current_section = "<root>"
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith(("#", ";")):
             continue
         if line.startswith("[") and line.endswith("]"):
-            current = sections.setdefault(line, {})
+            if line in sections:
+                raise ValueError(f"Duplicate EditorConfig section {line!r}.")
+            current_section = line
+            current = sections[line] = {}
             continue
         if "=" in line:
             key, value = line.split("=", 1)
-            current[key.strip()] = value.strip()
+            key = key.strip().lower()
+            if key in current:
+                raise ValueError(
+                    f"Duplicate EditorConfig key {key!r} in {current_section}."
+                )
+            current[key] = value.strip().lower()
     return root_values, sections
 
 
@@ -124,6 +332,50 @@ def load_wrapper_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+class EditorConfigParserTests(unittest.TestCase):
+    def test_expected_csharp_rules_match_checked_in_overlay(self):
+        _, sections = parse_editorconfig(
+            (REPO_ROOT / "TemplateRepo" / ".editorconfig").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(sections["[*.cs]"], EXPECTED_CSHARP_RULES)
+
+    def test_duplicate_sections_are_rejected_before_merge(self):
+        text = "[*.other]\nfirst = one\n[*.other]\nsecond = two\n"
+
+        with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig section"):
+            parse_editorconfig(text)
+
+    def test_duplicate_keys_within_a_section_are_rejected(self):
+        text = "[*.other]\nindent_size = 2\nindent_size = 4\n"
+
+        with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig key"):
+            parse_editorconfig(text)
+
+    def test_case_variant_duplicate_keys_within_a_section_are_rejected(self):
+        text = "[*.other]\nindent_size = 2\nINDENT_SIZE = 4\n"
+
+        with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig key"):
+            parse_editorconfig(text)
+
+    def test_values_are_normalized_to_lowercase(self):
+        _, sections = parse_editorconfig(
+            "[*.cs]\ninsert_final_newline = TRUE\n"
+        )
+
+        self.assertEqual(sections["[*.cs]"]["insert_final_newline"], "true")
+
+    def test_same_key_in_different_sections_is_valid(self):
+        _, sections = parse_editorconfig(
+            "[*.cs]\nindent_size = 4\n[*.xml]\nindent_size = 2\n"
+        )
+
+        self.assertEqual(sections["[*.cs]"]["indent_size"], "4")
+        self.assertEqual(sections["[*.xml]"]["indent_size"], "2")
 
 
 class WrapperTests(unittest.TestCase):
@@ -156,10 +408,36 @@ class WrapperTests(unittest.TestCase):
             errors="replace",
         )
 
-    def assert_author_readme(self, text, project_name, machine_identifier, title):
+    def assert_author_readme(
+        self,
+        readme,
+        project_name,
+        machine_identifier,
+        title,
+        *,
+        verification_mod_project_exists,
+    ):
+        context = "Generated Repository Documentation"
+        self.assertTrue(
+            readme.is_file(),
+            f"{context}: generated README does not exist: {readme}",
+        )
+        text = readme.read_text(encoding="utf-8")
+        self.assertTrue(
+            text.strip(),
+            f"{context}: generated README is empty: {readme}",
+        )
         lines = text.splitlines()
-        self.assertEqual(lines[0], f"# {title}")
-        self.assertEqual(sum(line.startswith("# ") for line in lines), 1)
+        self.assertEqual(
+            lines[0],
+            f"# {title}",
+            f"{context}: generated README title contract failed",
+        )
+        self.assertEqual(
+            sum(line.startswith("# ") for line in lines),
+            1,
+            f"{context}: generated README must have one top-level heading",
+        )
 
         headings = [
             "## Requirements",
@@ -172,10 +450,20 @@ class WrapperTests(unittest.TestCase):
             "## CI and releases",
         ]
         for heading in headings:
-            self.assertIn(heading, lines)
+            with self.subTest(
+                context=context,
+                contract="generated-readme-heading",
+                heading=heading,
+            ):
+                self.assertIn(
+                    heading,
+                    lines,
+                    f"{context}: missing README heading: {heading}",
+                )
         self.assertEqual(
             [lines.index(heading) for heading in headings],
             sorted(lines.index(heading) for heading in headings),
+            f"{context}: generated README headings are out of order",
         )
 
         required = (
@@ -191,6 +479,12 @@ class WrapperTests(unittest.TestCase):
             "net35",
             "does not require Blasphemous, Unity, or BepInEx",
             ".\\dotnet_format.bat",
+            "changes tracked source files",
+            f"dotnet format whitespace {project_name}.sln --no-restore "
+            "--verify-no-changes",
+            f"dotnet format style {project_name}.sln --no-restore "
+            "--severity warn --verify-no-changes",
+            "read-only validation",
             "-p:DeployToGame=true",
             '-p:DevFolder="C:\\path\\to\\Blasphemous\\Modding"',
             "must already exist",
@@ -200,10 +494,13 @@ class WrapperTests(unittest.TestCase):
             f"publish/{machine_identifier}.zip",
             "entry assembly",
             "relative directory layout",
+            "every file under `resources/`",
+            "including `.gitkeep` when `resources/` is otherwise empty",
             "Automated Test Project outputs are not included",
             "Dependency DLLs are not included",
             f"same `publish/{machine_identifier}.zip` package",
-            "When generated with the optional Verification Mod",
+            f"If `{project_name}.TestMod/{project_name}.TestMod.csproj` exists",
+            "No Verification Mod directory is expected when that project file is absent",
             f"{project_name}.TestMod/publish/{project_name}.TestMod.zip",
             f"plugins/{project_name}.TestMod.dll",
             "STARTUP_READY",
@@ -211,17 +508,34 @@ class WrapperTests(unittest.TestCase):
             "manual in-game verification",
             "SemVer",
             "draft",
+            "replaces the asset in an existing draft",
+            "already published release is refused",
+            "git tag 1.2.3",
+            "git push origin 1.2.3",
             "only the main Mod Package",
             "Windows with .NET 10",
             "builds in Release",
-            "checks formatting",
+            "formatting verification",
+            "[Build workflow](.github/workflows/build.yml)",
+            "[Release workflow](.github/workflows/release.yml)",
             "CRLF",
             "NuGet",
             "Discord",
-            "warn and skip",
+            "warn",
+            "skip",
         )
         for value in required:
-            self.assertIn(value, text)
+            with self.subTest(
+                context=context,
+                contract="generated-readme-required-fact",
+                marker=value,
+            ):
+                self.assertIn(
+                    value,
+                    text,
+                    f"{context}: generated README required fact is missing: "
+                    f"{value}",
+                )
 
         forbidden = (
             "Official Template Baseline",
@@ -232,13 +546,366 @@ class WrapperTests(unittest.TestCase):
             "git clone",
             "## License",
             "## Contributing",
+            "When generated with the optional Verification Mod",
+            "../",
+            "..\\",
+            "Blasphemous1_TemplateModRepo",
+            "tools/new_blas1mod.py",
         )
         for value in forbidden:
-            self.assertNotIn(value, text)
+            with self.subTest(
+                context=context,
+                contract="generated-readme-self-containment",
+                marker=value,
+            ):
+                self.assertNotIn(
+                    value,
+                    text,
+                    f"{context}: generated README contains forbidden "
+                    f"repository dependency: {value}",
+                )
+
+        ordered_command_groups = (
+            (
+                "restore-build-test",
+                (
+                    f"dotnet restore {project_name}.sln",
+                    f"dotnet build {project_name}.sln --no-restore",
+                    f"dotnet test {project_name}.sln --no-build",
+                ),
+            ),
+            (
+                "push-main-create-tag-push-tag",
+                (
+                    "git push origin main",
+                    "git tag 1.2.3",
+                    "git push origin 1.2.3",
+                ),
+            ),
+        )
+        for contract, commands in ordered_command_groups:
+            positions = tuple(text.find(command) for command in commands)
+            with self.subTest(context=context, contract=contract):
+                self.assertNotIn(
+                    -1,
+                    positions,
+                    f"{context}: ordered command is missing for {contract}: "
+                    f"{commands}",
+                )
+                self.assertEqual(
+                    tuple(sorted(positions)),
+                    positions,
+                    f"{context}: commands are out of order for {contract}: "
+                    f"{' -> '.join(commands)}",
+                )
+
+        verification_project = (
+            readme.parent
+            / f"{project_name}.TestMod"
+            / f"{project_name}.TestMod.csproj"
+        )
+        if verification_mod_project_exists is not None:
+            existence_assert = (
+                self.assertTrue
+                if verification_mod_project_exists
+                else self.assertFalse
+            )
+            existence_assert(
+                verification_project.is_file(),
+                f"{context}: Verification Mod project presence does not match "
+                f"the generated repository: {verification_project}",
+            )
+        self.assertNotIn(
+            f"]({project_name}.TestMod",
+            text,
+            f"{context}: Verification Mod directory must not be a mandatory "
+            "local link",
+        )
+        assert_markdown_contract(
+            self,
+            context=context,
+            owner_root=readme.parent,
+            sources=(readme,),
+        )
+        return text
 
     def assert_no_readme_placeholders(self, text):
         for placeholder in README_IDENTITY_PLACEHOLDERS:
-            self.assertNotIn(placeholder, text)
+            with self.subTest(
+                context="Generated Repository Documentation",
+                contract="identity-substitution",
+                placeholder=placeholder,
+            ):
+                self.assertNotIn(
+                    placeholder,
+                    text,
+                    "Generated Repository Documentation: unresolved identity "
+                    f"placeholder: {placeholder}",
+                )
+
+    def assert_generated_agent_guidance(
+        self, owner_root, project_name, *, generated
+    ):
+        context = "Generated Repository Documentation"
+        sources = tuple(owner_root / relative for relative in GENERATED_AGENT_DOCUMENTS)
+        missing = tuple(str(source) for source in sources if not source.is_file())
+        if missing:
+            self.fail(
+                f"{context}: agent-document-exists: missing generated agent "
+                f"documents: {', '.join(missing)}"
+            )
+
+        agents = (owner_root / "AGENTS.md").read_text(encoding="utf-8")
+        domain = (owner_root / "docs" / "agents" / "domain.md").read_text(
+            encoding="utf-8"
+        )
+        issue_tracker = (
+            owner_root / "docs" / "agents" / "issue-tracker.md"
+        ).read_text(encoding="utf-8")
+        triage = (owner_root / "docs" / "agents" / "triage-labels.md").read_text(
+            encoding="utf-8"
+        )
+
+        agent_required = (
+            f"# {project_name}",
+            "[README.md](README.md)",
+            "complete commands and workflow conditions",
+            "AGENTS.local.md",
+            "not required",
+            "Game deployment is opt-in",
+            "DeployToGame",
+            f"`{project_name}.csproj`",
+            f"`{project_name}.Tests`",
+            "non-packable",
+            "resources/",
+            "Automated Test Project output and dependency DLLs",
+            "Mod Package",
+        )
+        for marker in agent_required:
+            with self.subTest(
+                context=context,
+                contract="agent-guidance-required",
+                marker=marker,
+            ):
+                self.assertIn(
+                    marker,
+                    agents,
+                    f"{context}: generated agent guidance is missing: {marker}",
+                )
+        self.assertNotIn(
+            "```",
+            agents,
+            f"{context}: complete workflow command blocks belong in README.md",
+        )
+        for command in (
+            "dotnet restore",
+            "dotnet build",
+            "dotnet test",
+            ".\\dotnet_format.bat",
+            "-p:DeployToGame=true",
+            "-p:DevFolder=",
+        ):
+            self.assertNotIn(
+                command,
+                agents,
+                f"{context}: generated agent guidance repeats a README "
+                f"command: {command}",
+            )
+        self.assertNotIn(
+            "](AGENTS.local.md)",
+            agents,
+            f"{context}: AGENTS.local.md must remain an optional natural-language "
+            "reference",
+        )
+
+        domain_required = (
+            "`README.md`",
+            "`AGENTS.md`",
+            f"`{project_name}.csproj`",
+            f"`{project_name}.Tests`",
+            "`resources/`",
+            "`docs/agents/`",
+        )
+        for marker in domain_required:
+            with self.subTest(
+                context=context,
+                contract="domain-routing-required",
+                marker=marker,
+            ):
+                self.assertIn(
+                    marker,
+                    domain,
+                    f"{context}: generated domain routing is missing: {marker}",
+                )
+        for marker in (
+            "GLOSSARY.md",
+            "GLOSSARY-MAP.md",
+            "docs/adr/",
+            "src/",
+            "ordering",
+            "billing",
+            "multi-context",
+            "Single-context repo",
+            "Multi-context repo",
+            "/domain-modeling",
+            "/grill-with-docs",
+            "/improve-codebase-architecture",
+        ):
+            self.assertNotIn(
+                marker,
+                domain,
+                f"{context}: generated domain routing contains an unavailable "
+                f"path or entrypoint: {marker}",
+            )
+
+        self.assertIn(
+            "## Wayfinding operations",
+            issue_tracker,
+            f"{context}: retained Wayfinding section is missing",
+        )
+        normalized_issue_tracker = normalize_markdown_newlines(issue_tracker)
+        operations, wayfinding = normalized_issue_tracker.split(
+            "## Wayfinding operations", 1
+        )
+        operation_headings = (
+            "### Create an issue",
+            "### Read an issue",
+            "### List issues",
+            "### Comment on an issue",
+            "### Add a label",
+            "### Close an issue",
+        )
+        issue_required = (
+            "$IssueNumber",
+            "@'\n## Summary",
+            'gh issue create --title "..." --body-file -',
+            "gh issue view $IssueNumber --json "
+            "number,title,body,state,labels,comments,parent,subIssues",
+            "gh issue list --state open --json "
+            "number,title,body,state,labels,comments,parent,subIssues",
+            "gh issue comment $IssueNumber --body-file .\\comment.md",
+            'gh issue edit $IssueNumber --add-label "ready-for-agent"',
+            'gh issue close $IssueNumber --reason completed --comment "..."',
+            "Pull requests are not a feature-request surface.",
+        )
+        for marker in issue_required:
+            with self.subTest(
+                context=context,
+                contract="issue-tracker-required",
+                marker=marker,
+            ):
+                self.assertIn(
+                    marker,
+                    operations,
+                    f"{context}: generated issue tracker is missing: {marker}",
+                )
+        for heading in operation_headings:
+            self.assertEqual(
+                1,
+                operations.count(heading),
+                f"{context}: issue operation must have one canonical "
+                f"description: {heading}",
+            )
+        for marker in (
+            "Use a heredoc",
+            "When set to",
+            "gh pr ",
+            "## When a skill says",
+            "Read or fetch",
+            "--remove-label",
+        ):
+            self.assertNotIn(
+                marker,
+                operations,
+                f"{context}: generated issue tracker contains a duplicate, "
+                f"placeholder, or unavailable operation: {marker}",
+            )
+        self.assertEqual(
+            0,
+            operations.count("/wayfinder"),
+            f"{context}: Wayfinding text must remain after its heading",
+        )
+        self.assertIn(
+            "Used by `/wayfinder`.",
+            wayfinding,
+            f"{context}: retained Wayfinding guidance is missing",
+        )
+        self.assertEqual(
+            WAYFINDING_GOLDEN,
+            f"## Wayfinding operations{wayfinding}",
+            f"{context}: retained Wayfinding guidance changed",
+        )
+        self.assertEqual(
+            (),
+            wayfinding_prerequisite_clauses(wayfinding),
+            f"{context}: Wayfinding must not add an installation prerequisite",
+        )
+
+        for label in GENERATED_TRIAGE_LABELS:
+            with self.subTest(
+                context=context,
+                contract="triage-label-authority",
+                label=label,
+            ):
+                self.assertEqual(
+                    1,
+                    triage.count(f"`{label}`"),
+                    f"{context}: triage labels must be a direct unique list: "
+                    f"{label}",
+                )
+        for marker in (
+            "mattpocock",
+            "| Label",
+            "The skills speak",
+            "Edit the right-hand column",
+            "/triage",
+        ):
+            self.assertNotIn(
+                marker,
+                triage,
+                f"{context}: triage labels must not delegate to another "
+                f"authority: {marker}",
+            )
+
+        combined = "\n".join((agents, domain, issue_tracker, triage))
+        outside_wayfinding = "\n".join((agents, domain, operations, triage))
+        self.assertEqual(
+            [],
+            GENERATED_SKILL_ENTRYPOINT.findall(outside_wayfinding),
+            f"{context}: unavailable skill entrypoints remain in generated "
+            "agent guidance",
+        )
+        for marker in (
+            "../",
+            "..\\",
+            "TemplateRepo",
+            "Overlay Root",
+            "Blasphemous1_TemplateModRepo",
+            "tools/new_blas1mod.py",
+            "docs/create-mod-repository.md",
+            "AGENTS.delivery.md",
+        ):
+            self.assertNotIn(
+                marker,
+                combined,
+                f"{context}: generated agent guidance depends on the parent "
+                f"repository: {marker}",
+            )
+        if generated:
+            for placeholder in GENERATED_IDENTITY_PLACEHOLDERS:
+                self.assertNotIn(
+                    placeholder,
+                    combined,
+                    f"{context}: unresolved identity placeholder in generated "
+                    f"agent guidance: {placeholder}",
+                )
+
+        assert_markdown_contract(
+            self,
+            context=context,
+            owner_root=owner_root,
+            sources=sources,
+        )
 
     def install_template_package(self, package):
         self.assertEqual(platform.system(), "Windows")
@@ -512,12 +1179,20 @@ class WrapperTests(unittest.TestCase):
                     wrapper.validate_machine_identifier(name)
 
     def test_overlay_readme_preserves_author_contract(self):
-        text = (REPO_ROOT / "TemplateRepo" / "README.md").read_text(encoding="utf-8")
+        readme = REPO_ROOT / "TemplateRepo" / "README.md"
         self.assert_author_readme(
-            text,
+            readme,
             "@PROJECT_NAME@",
             "@MACHINE_IDENTIFIER@",
             "@TITLE@",
+            verification_mod_project_exists=None,
+        )
+
+    def test_overlay_agent_guidance_is_self_contained(self):
+        self.assert_generated_agent_guidance(
+            REPO_ROOT / "TemplateRepo",
+            "@PROJECT_NAME@",
+            generated=False,
         )
 
     @disposable_dotnet_test
@@ -549,8 +1224,6 @@ class WrapperTests(unittest.TestCase):
             (output / "Blasphemous.Example.Tests" / "ModMetadataTests.cs").is_file()
         )
         self.assertTrue((output / "resources").is_dir())
-        self.assertTrue((output / "README.md").is_file())
-        self.assertTrue((output / "AGENTS.md").is_file())
         self.assertTrue((output / ".editorconfig").is_file())
         self.assertTrue((output / ".gitattributes").is_file())
         self.assertTrue((output / ".gitignore").is_file())
@@ -562,10 +1235,7 @@ class WrapperTests(unittest.TestCase):
             editorconfig_sections["[*]"], EXPECTED_EDITORCONFIG_GLOBAL
         )
         csharp_rules = editorconfig_sections["[*.cs]"]
-        for key, expected in EXPECTED_CSHARP_RULES.items():
-            with self.subTest(editorconfig_rule=key):
-                self.assertEqual(csharp_rules[key], expected)
-        self.assertNotIn("insert_final_newline", csharp_rules)
+        self.assertEqual(csharp_rules, EXPECTED_CSHARP_RULES)
         self.assertEqual(
             editorconfig_value(
                 editorconfig_sections,
@@ -590,9 +1260,6 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue((output / ".worktreeinclude").is_file())
         self.assertTrue((output / "dotnet_format.bat").is_file())
         self.assertTrue((output / ".config" / "wt.toml").is_file())
-        self.assertTrue((output / "docs" / "agents" / "domain.md").is_file())
-        self.assertTrue((output / "docs" / "agents" / "issue-tracker.md").is_file())
-        self.assertTrue((output / "docs" / "agents" / "triage-labels.md").is_file())
         workflow_dir = output / ".github" / "workflows"
         self.assertTrue((workflow_dir / "build.yml").is_file())
         self.assertTrue((workflow_dir / "release.yml").is_file())
@@ -712,14 +1379,20 @@ class WrapperTests(unittest.TestCase):
         )
         self.assertIn("ModMetadataTests", test_source)
         self.assertIn("typeof(Blasphemous.Example.Example)", test_source)
-        readme_text = (output / "README.md").read_text(encoding="utf-8")
-        self.assert_author_readme(
-            readme_text,
+        readme = output / "README.md"
+        readme_text = self.assert_author_readme(
+            readme,
             "Blasphemous.Example",
             "Example",
             "My Mod Template",
+            verification_mod_project_exists=False,
         )
         self.assert_no_readme_placeholders(readme_text)
+        self.assert_generated_agent_guidance(
+            output,
+            "Blasphemous.Example",
+            generated=True,
+        )
         self.assertIn(
             "DeployToGame",
             (output / "AGENTS.md").read_text(encoding="utf-8"),
@@ -1127,14 +1800,20 @@ class WrapperTests(unittest.TestCase):
         solution_text = (output / f"{project_name}.sln").read_text(
             encoding="utf-8"
         )
-        readme_text = (output / "README.md").read_text(encoding="utf-8")
-        self.assert_author_readme(
-            readme_text,
+        readme = output / "README.md"
+        readme_text = self.assert_author_readme(
+            readme,
             project_name,
             "WithTest",
             title,
+            verification_mod_project_exists=True,
         )
         self.assert_no_readme_placeholders(readme_text)
+        self.assert_generated_agent_guidance(
+            output,
+            project_name,
+            generated=True,
+        )
         main_project_text = (output / f"{project_name}.csproj").read_text(
             encoding="utf-8"
         )

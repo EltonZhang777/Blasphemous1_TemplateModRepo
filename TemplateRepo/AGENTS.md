@@ -1,26 +1,23 @@
 # @PROJECT_NAME@
 
-This repository is a Blasphemous 1 Mod generated from the official template baseline.
+This repository is a Blasphemous 1 Mod. This file owns agent boundaries, and [README.md](README.md) is the single authority for complete commands and workflow conditions.
 
 ## Repository boundary
 
 - `@PROJECT_NAME@.csproj` is the `net35` Mod entry assembly.
 - `@PROJECT_NAME@.Tests` is the adjacent `net48` xUnit project and must stay non-packable.
-- `resources/` contains the Mod resources copied into the Mod package.
-- `PackageMod.targets` owns packaging and opt-in development deployment.
-- Do not add test projects or test assemblies to the Mod package.
+- `resources/` contains the files placed in the Mod Package.
+- [PackageMod.targets](PackageMod.targets) owns package construction.
+- Change packaging, release workflows, or CI triggers only when the task explicitly includes that scope.
+- Automated Test Project output and dependency DLLs must not enter the Mod Package.
 
-## Local verification
+## Mandatory constraints
 
-```powershell
-dotnet restore @PROJECT_NAME@.sln
-dotnet build @PROJECT_NAME@.sln --no-restore
-dotnet test @PROJECT_NAME@.sln --no-build
-.\dotnet_format.bat @PROJECT_NAME@.sln
-```
+- Game deployment is opt-in through `DeployToGame`. Enable it only when the user explicitly requests deployment to a valid existing game destination, and use the README command.
+- Follow the README for restore, build, test, formatting, deployment, packaging, release, and Verification Mod work before claiming a check passed.
+- Keep local process, environment, and path changes out of repository files unless the task requires them.
 
-Development deployment requires `-p:DeployToGame=true` and a valid `-p:DevFolder=...`.
+## Local context
 
-## Agent skills
-
-See `docs/agents/domain.md`, `docs/agents/issue-tracker.md`, and `docs/agents/triage-labels.md`.
+- An optional untracked `AGENTS.local.md` may add checkout-specific notes. It is not required and may be absent.
+- Read [domain routing](docs/agents/domain.md), [issue operations](docs/agents/issue-tracker.md), and [triage labels](docs/agents/triage-labels.md) when those branches apply.
