@@ -1,17 +1,10 @@
 # Blasphemous1_TemplateModRepo
 
-A non-vendored repository generator for Blasphemous 1 Mod development. It creates a new Mod repository from the Official Template Baseline or migrates an existing repository in place while preserving its Mod Identity and layout.
-
-This repository also maintains the standalone `Blasphemous1.ModTest.Templates` package, which adds a Verification Mod to an existing repository; that project is separate from the generated Mod and its main Mod Package.
-
-## Clone the Repository
-
-```powershell
-git clone https://github.com/EltonZhang777/Blasphemous1_TemplateModRepo.git
-Set-Location .\Blasphemous1_TemplateModRepo
-```
+This repository is the shared setup entry point for Blasphemous 1 Mod repository development. The Generator Command creates new Mod repositories only. Existing repositories use the in-place migration path.
 
 ## Prerequisites
+
+These are the common host prerequisites for the creation and migration paths.
 
 Use a Windows machine with:
 
@@ -31,10 +24,19 @@ git --version
 
 The operating system must be Windows, `dotnet --version` must start with `10.`, and Python must report version 3.9 or later.
 
+## Clone the Repository
+
+```powershell
+git clone https://github.com/EltonZhang777/Blasphemous1_TemplateModRepo.git
+Set-Location .\Blasphemous1_TemplateModRepo
+```
+
 ## Choose your path
 
 - [Create a new Mod repository](docs/create-mod-repository.md) from the Official Template Baseline.
-- [Migrate an existing Mod repository](docs/migrate-mod-repository.md) in place.
+- [Migrate an existing Mod repository](docs/migrate-mod-repository.md) in place. Migration preserves Mod Identity and layout by default and permits only an approved structural refactor required by a failing gate.
+
+For a supplemental verification path, see the [Test Template Package verification journey](Templates/Blasphemous1.ModTest.Templates/README.md).
 
 ## Contributing
 

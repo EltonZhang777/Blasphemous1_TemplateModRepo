@@ -1,0 +1,13 @@
+name: Validate spec CI lane
+
+on:
+  push:
+    branches:
+      - "spec-ci/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
