@@ -31,6 +31,9 @@ ROOT_README = REPO_ROOT / "README.md"
 ROOT_AGENTS = REPO_ROOT / "AGENTS.md"
 CREATE_GUIDE = REPO_ROOT / "docs" / "create-mod-repository.md"
 MIGRATION_GUIDE = REPO_ROOT / "docs" / "migrate-mod-repository.md"
+MIGRATION_RECOVERY_GUIDE = (
+    REPO_ROOT / "docs" / "migrate-mod-repository-recovery.md"
+)
 MARKDOWN_LOCAL_LINK = re.compile(
     r"\[[^\]]+\]\((?!(?:https?://|mailto:))([^)]+)\)"
 )
@@ -392,11 +395,28 @@ class RootDocumentationTests(unittest.TestCase):
                 "Reconcile CI and Release Semantics",
                 "Verify and Record Migration Evidence",
                 "Optional In-Game Smoke",
+                "Apply Approved CI and Release Differences",
                 "Rollback",
                 "Stop States",
                 "Completion Checklist",
             ),
         )
+        migration_text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        recovery_text = MIGRATION_RECOVERY_GUIDE.read_text(encoding="utf-8")
+        rollback = markdown_section(
+            MIGRATION_GUIDE,
+            "## Rollback",
+            "## Stop States",
+        )
+        self.assertIn(
+            "[Migration Recovery Reference]"
+            "(migrate-mod-repository-recovery.md#rollback)",
+            rollback,
+        )
+        self.assertIn("Record the Starting State and Prepare Recovery", rollback)
+        self.assertIn("## Rollback", recovery_text)
+        self.assertIn("migrate-mod-repository.md", recovery_text)
+        self.assertIn("migrate-mod-repository-recovery.md#rollback", migration_text)
         assert_guide_contract(
             self,
             CREATE_GUIDE,
@@ -417,7 +437,13 @@ class RootDocumentationTests(unittest.TestCase):
     def test_documentation_links_resolve_locally(self):
         assert_local_links_resolve(
             self,
-            (ROOT_README, CREATE_GUIDE, MIGRATION_GUIDE, ROOT_AGENTS),
+            (
+                ROOT_README,
+                CREATE_GUIDE,
+                MIGRATION_GUIDE,
+                MIGRATION_RECOVERY_GUIDE,
+                ROOT_AGENTS,
+            ),
         )
 
     def test_migration_deployment_safety_order(self):
@@ -471,9 +497,14 @@ class RootDocumentationTests(unittest.TestCase):
             "## Inventory Before Editing",
         )
         restore = markdown_section(
-            MIGRATION_GUIDE,
+            MIGRATION_RECOVERY_GUIDE,
             "### Non-Git restore",
-            "## Stop States",
+            "### Git restore evidence",
+        )
+        final_restore = markdown_section(
+            MIGRATION_RECOVERY_GUIDE,
+            "#### Apply the approved restore to the original repository",
+            "### Git restore evidence",
         )
 
         self.assertIn("function Assert-NoReparsePointAncestor", backup)
@@ -494,24 +525,136 @@ class RootDocumentationTests(unittest.TestCase):
         )
 
         for marker in (
+            "$repo = (Resolve-Path -LiteralPath",
+            "$containingRoot =",
+            "$backupRoot = [IO.Path]::GetFullPath",
+            "$backup = [IO.Path]::GetFullPath",
+            "$manifestPath = [IO.Path]::GetFullPath",
+            "$evidenceRoot = [IO.Path]::GetFullPath",
+            "$disposableRoot = [IO.Path]::GetFullPath",
+            "$quarantineRoot = [IO.Path]::GetFullPath",
+            "function Test-IsWithin",
+            "function Assert-NoReparsePointAncestor",
+            "function Assert-NoReparsePointTree",
+            "function Assert-RestorePathsSafe",
+            "function Resolve-ContainedFilePath",
+            "function Get-RepositoryManifest",
+            "function Invoke-ManifestRestore",
             "Assert-NoReparsePointAncestor $repo",
             "Assert-NoReparsePointAncestor $backupRoot",
-            "Assert-NoReparsePointAncestor $backup",
+            "Assert-RestorePathsSafe $targetRoot",
+            "repository-manifest.json",
+            "Get-FileHash -Algorithm SHA256",
             "Resolve repository reparse points before restore",
+            "no file class",
+            "does not normalize line endings",
         ):
             self.assertIn(marker, restore)
+        for marker in (
+            "Assert-RestorePathsSafe $targetRoot",
+            "Assert-NoReparsePointAncestor $manifestPath",
+            "Get-Content -LiteralPath $manifestPath",
+            "Move-Item -LiteralPath $source",
+            "Copy-Item -LiteralPath $source",
+            "Set-Content -LiteralPath $evidencePath",
+        ):
+            self.assertGreaterEqual(restore.count(marker), 1)
         self.assertLess(
-            restore.find("Assert-NoReparsePointAncestor $repo"),
-            restore.find("1. Verify the backup"),
+            restore.find("Assert-NoReparsePointAncestor $manifestPath"),
+            restore.find("Get-Content -LiteralPath $manifestPath"),
         )
+        self.assertLess(
+            restore.find("Assert-RestorePathsSafe $targetRoot"),
+            restore.find("Get-ChildItem -LiteralPath $root -Recurse -File -Force"),
+        )
+        self.assertIn("function Invoke-ApprovedOriginalRestore", restore)
+        approved_restore = restore.split(
+            "function Invoke-ApprovedOriginalRestore", 1
+        )[1]
+        assert_ordered(
+            self,
+            approved_restore,
+            (
+                "$trialQuarantineRoot = $quarantineRoot",
+                "$finalQuarantineRoot = [IO.Path]::GetFullPath($finalQuarantinePath)",
+                "Assert-NoReparsePointAncestor $finalQuarantineRoot",
+                "Assert-NoReparsePointAncestor $disposableRoot",
+                "if (Test-Path -LiteralPath $finalQuarantineRoot)",
+                "Test-IsWithin $finalQuarantineRoot $trialQuarantineRoot",
+                "Test-IsWithin $finalQuarantineRoot $disposableRoot",
+                "$quarantineRoot = $finalQuarantineRoot",
+                "$targetRoot = $repo",
+                "Assert-RestorePathsSafe $targetRoot",
+                "$null = Invoke-ManifestRestore $targetRoot",
+            ),
+        )
+        self.assertIn(
+            "Invoke-ApprovedOriginalRestore -finalQuarantinePath "
+            "'<new-external-quarantine-for-final-restore>'",
+            final_restore,
+        )
+        self.assertIn("Keep the disposable copy and its trial quarantine.", final_restore)
         for marker in (
             "repository-manifest.json",
-            "$referenceManifest",
             "Compare-Object",
             "Restore: TESTED",
             "Restore: NOT RUN",
+            "added, deleted, and modified file sets",
+            "original recorded build and test commands",
+            "outside the comparison root",
+            "$evidencePath = Join-Path $evidenceRoot 'restore-comparison.json'",
+            "if ((Test-IsWithin $external $targetRoot)",
         ):
             self.assertIn(marker, restore)
+        self.assertGreaterEqual(
+            restore.count("Assert-RestorePathsSafe $targetRoot"),
+            5,
+        )
+        path_preflight = restore.find(
+            "foreach ($candidateRoot in @($disposableRoot, $disposableTarget))"
+        )
+        create_disposable = restore.find(
+            "New-Item -ItemType Directory -Path $disposableRoot"
+        )
+        copy_disposable = restore.find("$null = robocopy $repo $disposableTarget")
+        self.assertNotEqual(-1, path_preflight)
+        self.assertNotEqual(-1, create_disposable)
+        self.assertNotEqual(-1, copy_disposable)
+        self.assertIn("@($backupRoot, $evidenceRoot, $quarantineRoot)", restore)
+        self.assertIn("Test-IsWithin $candidateRoot $external", restore)
+        before_create_guard = restore.find(
+            "Assert-RestorePathsSafe $disposableTarget", path_preflight
+        )
+        self.assertGreater(before_create_guard, path_preflight)
+        self.assertLess(before_create_guard, create_disposable)
+        self.assertLess(
+            restore.find("Assert-NoReparsePointAncestor $disposableRoot", path_preflight),
+            create_disposable,
+        )
+        self.assertLess(
+            restore.find("Assert-NoReparsePointAncestor $disposableTarget", path_preflight),
+            create_disposable,
+        )
+        before_copy_guard = restore.find(
+            "Assert-RestorePathsSafe $disposableTarget", create_disposable
+        )
+        self.assertGreater(before_copy_guard, create_disposable)
+        self.assertLess(before_copy_guard, copy_disposable)
+        self.assertLess(
+            restore.find("Assert-NoReparsePointAncestor $disposableTarget", create_disposable),
+            copy_disposable,
+        )
+        for operation in ("Move-Item -LiteralPath $source", "Copy-Item -LiteralPath $source"):
+            operation_position = restore.find(operation)
+            self.assertNotEqual(-1, operation_position)
+            self.assertGreater(
+                restore.rfind("Assert-RestorePathsSafe $targetRoot", 0, operation_position),
+                -1,
+            )
+            self.assertGreater(
+                restore.rfind("Assert-NoReparsePointAncestor $destination", 0, operation_position),
+                -1,
+            )
 
     def test_migration_inventory_and_powershell_placeholders(self):
         text = MIGRATION_GUIDE.read_text(encoding="utf-8")
@@ -528,40 +671,223 @@ class RootDocumentationTests(unittest.TestCase):
 
     def test_git_recovery_and_revert_are_approval_gated(self):
         text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        recovery = MIGRATION_RECOVERY_GUIDE.read_text(encoding="utf-8")
+        git_restore = recovery.split("### Git restore evidence", 1)[1]
         git_recovery = markdown_section(
             MIGRATION_GUIDE,
             "### Git repository",
             "### Non-Git repository",
         )
+        before_merge = markdown_section(
+            MIGRATION_RECOVERY_GUIDE,
+            "### Git before merge",
+            "### Git after merge",
+        )
         after_merge = markdown_section(
-            MIGRATION_GUIDE,
-            "### After merge",
+            MIGRATION_RECOVERY_GUIDE,
+            "### Git after merge",
             "### Non-Git restore",
         )
 
         self.assertIn("verified external backup", git_recovery)
         self.assertIn("A branch and SHA do not restore", git_recovery)
+        self.assertIn("migrate-mod-repository-recovery.md#rollback", git_recovery)
+        assert_ordered(
+            self,
+            before_merge,
+            (
+                "git status --short",
+                "git switch '<recorded-starting-branch>'",
+                "If Git refuses because an untracked file would be overwritten",
+                "git rev-parse HEAD",
+                "git status --ignored --short --untracked-files=all",
+                "separate owner approval for a quarantine",
+                "Restore every touched ignored or untracked path",
+                "Run `git status --short`",
+            ),
+        )
         self.assertIn("git revert --no-commit -m 1 '<merge-commit>'", after_merge)
+        self.assertIn("#### Linear commit range", after_merge)
+        self.assertIn("#### Merge commit", after_merge)
+        self.assertIn("#### Squash commit", after_merge)
+        self.assertIn("git merge-base --is-ancestor", after_merge)
+        for marker in (
+            "$recordedMainlineParent = '<recorded-target-branch-tip-before-merge>'",
+            "$mergeParents[0] -ne $recordedMainlineParent",
+            "$oldestParents[0] -ne $start",
+            "$recordedMainlineParent = '<recorded-target-branch-tip-before-squash>'",
+            "$parents[0] -ne $recordedMainlineParent",
+        ):
+            self.assertIn(marker, after_merge)
+        self.assertIn(
+            "git revert --no-commit $commit",
+            after_merge,
+        )
         self.assertIn(
             "git revert --no-commit '<squash-commit>'",
             after_merge,
         )
-        self.assertIn(
-            "git diff --cached '<recorded-start-sha>' --",
-            after_merge,
-        )
-        self.assertIn("Request separate explicit approval", after_merge)
+        self.assertIn("git diff --cached", after_merge)
+        self.assertGreaterEqual(after_merge.count("separate explicit approval"), 3)
         self.assertNotIn("git revert -m 1 '<merge-commit>'", after_merge)
+        self.assertIn("Choose exactly one path", after_merge)
+        self.assertIn("record `Restore: NOT RUN`", recovery)
+        self.assertIn("`NOT RUN` cannot complete the migration", recovery)
+        self.assertIn("`Restore: TESTED` for Git requires a disposable clone", recovery)
+        for marker in (
+            "$recordedFiles = @(",
+            "git clone --no-hardlinks --no-checkout",
+            "git -C $disposableClone switch --detach $startingSha",
+            "$treeAtStart =",
+            "$actualTree =",
+            "git -C $disposableClone diff --exit-code $startingSha --",
+            "Resolve-ContainedFilePath $backup $entry.RelativePath",
+            "Resolve-ContainedFilePath $disposableClone $entry.RelativePath",
+            "Copy-Item -LiteralPath $source -Destination $destination",
+            "Get-FileHash -Algorithm SHA256 -LiteralPath $destination",
+            "git -C $disposableClone status --ignored --short --untracked-files=all",
+            "$copyEvidence += [pscustomobject]@{ RelativePath = $entry.RelativePath; Hash = $entry.Hash }",
+            "git-restore-evidence.json",
+            "RestoredFiles = $copyEvidence",
+            "original recorded build and test commands",
+        ):
+            self.assertIn(marker, git_restore)
+        git_preflight = git_restore.find("$externalRoots = @($backupRoot, $evidenceRoot, $disposableClone)")
+        git_clone = git_restore.find("git clone --no-hardlinks --no-checkout")
+        self.assertNotEqual(-1, git_preflight)
+        self.assertLess(git_preflight, git_clone)
+        self.assertIn("if ($left -ne $right -and ((Test-IsWithin $left $right)", git_restore)
+        self.assertLess(
+            git_restore.find("Assert-NoReparsePointAncestor $disposableClone"),
+            git_clone,
+        )
+        self.assertNotIn("## Completion Checklist", recovery)
+        self.assertNotIn("## Stop States", recovery)
+        self.assertNotIn("A migration is complete only", recovery)
+        for marker in (
+            "git reset --hard",
+            "git clean -f",
+            "git checkout --",
+        ):
+            self.assertNotRegex(recovery, rf"(?m)^\s*{re.escape(marker)}")
         self.assertIn("correct one-commit, squash, or merge revert path", text)
 
-    def test_migration_partial_is_not_ticket_closure(self):
-        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
-
-        self.assertIn("not a GitHub issue-closure state", text)
-        self.assertIn(
-            "requires the exact HEAD plus matching evidence",
-            text,
+    def test_migration_partial_keeps_only_the_closure_boundary(self):
+        stop_states = markdown_section(
+            MIGRATION_GUIDE,
+            "## Stop States",
+            "## Completion Checklist",
         )
+
+        self.assertIn(
+            "migration-local `PARTIAL` does not itself establish completion, "
+            "closure evidence, or closure eligibility",
+            stop_states,
+        )
+        for marker in (
+            "only after the user explicitly approves a narrowed scope",
+            "deferred approved replacement",
+            "unavailable required verification",
+            "unrun restore",
+            "remaining check, its owner, and its next action",
+            "`PARTIAL` never means the migration is complete",
+        ):
+            self.assertIn(marker, stop_states)
+        self.assertNotIn("Issue closure follows", stop_states)
+        self.assertNotIn("explicitly permitted closure state", stop_states)
+
+    def test_migration_ci_application_and_final_head_contract(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        reconciliation = markdown_section(
+            MIGRATION_GUIDE,
+            "## Reconcile CI and Release Semantics",
+            "## Verify and Record Migration Evidence",
+        )
+        application = markdown_section(
+            MIGRATION_GUIDE,
+            "## Apply Approved CI and Release Differences",
+            "## Rollback",
+        )
+        stop_states = markdown_section(
+            MIGRATION_GUIDE,
+            "## Stop States",
+            "## Completion Checklist",
+        )
+
+        self.assertIn("inventory only", reconciliation)
+        self.assertNotIn("run the required local restore", reconciliation)
+        self.assertNotIn("wait for explicit user approval", reconciliation)
+        assert_ordered(
+            self,
+            text,
+            (
+                "## Verify and Record Migration Evidence",
+                "## Optional In-Game Smoke",
+                "## Apply Approved CI and Release Differences",
+                "## Rollback",
+                "## Stop States",
+                "## Completion Checklist",
+            ),
+        )
+        for marker in (
+            "explicit user approval",
+            "only the differences the user approved",
+            "complete required local gate set",
+            "clean working tree",
+            "outside the repository",
+            "exact 40-character final HEAD",
+            "hosted CI passes on that same HEAD",
+            "`UNVERIFIED` cannot satisfy completion",
+            "Any later commit invalidates both local and hosted evidence",
+            "failed required local or hosted check",
+            "unapproved required residual gap",
+        ):
+            self.assertIn(marker, application)
+        for marker in (
+            "BLOCKED — DECISION REQUIRED",
+            "remaining check",
+            "owner",
+            "next action",
+        ):
+            self.assertIn(marker, stop_states)
+
+    def test_migration_refactor_gate_is_the_single_authority(self):
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        layout = markdown_section(
+            MIGRATION_GUIDE,
+            "## Preserve the Existing Layout",
+            "## Classify Template Differences",
+        )
+        gate = markdown_section(
+            MIGRATION_GUIDE,
+            "## Structural Refactor Gate",
+            "## Reconcile CI and Release Semantics",
+        )
+
+        self.assertIn("[Structural Refactor Gate](#structural-refactor-gate)", layout)
+        self.assertNotIn("only when a required", layout)
+        self.assertEqual(text.count("A layout refactor is eligible only"), 1)
+        for marker in (
+            "The exact command and full failing output",
+            "Wait for explicit user approval",
+            "If the user declines, stop before dependent edits and record `BLOCKED — DECISION REQUIRED`.",
+            "If the required refactor is infeasible, stop and record `UNSUPPORTED FOR THIS MIGRATION RUN`.",
+        ):
+            self.assertIn(marker, gate)
+
+    def test_migration_does_not_require_host_ripgrep(self):
+        supported_inputs = markdown_section(
+            MIGRATION_GUIDE,
+            "## Supported Inputs",
+            "## Record the Starting State and Prepare Recovery",
+        )
+
+        self.assertNotIn("Ripgrep", supported_inputs)
+        self.assertNotIn("rg --version", supported_inputs)
+        self.assertNotIn("a working `rg`", supported_inputs)
+        text = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        self.assertNotIn("Ripgrep (`rg`)", text)
+        self.assertNotIn("rg --version", text)
 
     def test_creation_guide_claims_match_template_sources(self):
         text = CREATE_GUIDE.read_text(encoding="utf-8")

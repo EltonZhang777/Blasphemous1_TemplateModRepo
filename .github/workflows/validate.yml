@@ -23,6 +23,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
+      - name: Verify checkout HEAD matches event SHA
+        run: |
+          $head = (git rev-parse HEAD).Trim()
+          if ($head -ne $env:GITHUB_SHA) {
+            throw "Checkout HEAD $head does not match event SHA $($env:GITHUB_SHA)."
+          }
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
@@ -64,3 +71,10 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover -s tests -v
+
+      - name: Record validation evidence
+        run: |
+          "sha=$env:GITHUB_SHA" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "run_id=$env:GITHUB_RUN_ID" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          "run_url=$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID" |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

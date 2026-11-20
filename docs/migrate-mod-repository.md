@@ -18,7 +18,6 @@ Use Windows with:
 - A working .NET SDK 10 installation.
 - NuGet access to the feeds recorded in the repository.
 - Python 3.9 or later when generating a clean reference repository.
-- Ripgrep (`rg`) for the read-only inventory commands, or equivalent search commands.
 - Git for the Git recovery path; non-Git repositories do not require it.
 
 Verify the host:
@@ -27,10 +26,9 @@ Verify the host:
 [System.Environment]::OSVersion.Version
 dotnet --version
 python --version
-rg --version
 ```
 
-Expected outcomes are Windows, a `dotnet --version` value starting with `10.`, Python 3.9 or later when needed, and a working `rg`. For a Git repository, also verify `git --version`.
+Expected outcomes are Windows, a `dotnet --version` value starting with `10.`, and Python 3.9 or later when needed. For a Git repository, also verify `git --version`.
 
 Inspect the repository inputs:
 
@@ -71,6 +69,8 @@ git switch -c migrate/template-baseline '<recorded-start-sha>'
 ```
 
 Expected outcome: the new branch points at the recorded SHA and `git status --short` is empty. Use phase-sized commits for inventory, recovery, tests/package, CI, and validation. Commit, push, and pull request actions remain separately approval-gated.
+
+The ordered Git rollback procedure is in [Migration Recovery Reference](migrate-mod-repository-recovery.md#rollback).
 
 ### Non-Git repository
 
@@ -189,7 +189,7 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 
 Expected outcome: both manifests have the same count and `Compare-Object` returns no differences, and `repository-manifest.json` exists under `$backupRoot`. Keep that file with the backup; it is the reference for restore verification. If the copy, verification, or manifest write fails, stop before the first edit.
 
-A backup is not proof that restore works. The approved restore procedure is in [Rollback](#rollback); do not claim it was tested unless it was actually run.
+A backup is not proof that restore works. The approved procedure is in [Migration Recovery Reference](migrate-mod-repository-recovery.md#rollback); do not claim it was tested unless it was actually run.
 
 ## Inventory Before Editing
 
@@ -262,10 +262,10 @@ Expected outcome: the identity inventory before and after migration matches, or 
 Keep the existing solution and project layout by default. In particular:
 
 - Keep a project that lives in a subdirectory in that subdirectory.
-- Keep solution-relative paths, resource roots, export locations, and build entry points unless a required gate cannot pass otherwise.
+- Keep solution-relative paths, resource roots, export locations, and build entry points.
 - Keep intentional custom build steps, data DLL copies, package layouts, and deployment targets.
 
-Generated-layout parity alone is not a reason to move or rename a project. Use the [Structural Refactor Gate](#structural-refactor-gate) only when a required build, Automated Test Project, package-content, opt-in deployment, or CI-path gate cannot be satisfied in the existing layout.
+Generated-layout parity alone is not a reason to move or rename a project. For any proposed layout refactor, follow the [Structural Refactor Gate](#structural-refactor-gate).
 
 Expected outcome: the pre-edit and post-migration layout inventories match, or the difference links to approved refactor evidence.
 
@@ -348,9 +348,7 @@ Inventory the old workflow before replacing it. Record:
 
 The representative repository can use a different workflow shape from the generated baseline, including a non-Windows runner, an older SDK, combined build/release logic, and release steps in a single file. These are evidence to reconcile, not files to overwrite blindly.
 
-Do not replace CI in this step. After completing the verification below, run the required local restore, build, test, format, package, and deployment gates before replacing CI. Wait for explicit user approval before editing workflow or release files. Preserve intentional release and deployment differences explicitly. The generated Windows .NET 10 workflows are the target contract only after the required local gates pass.
-
-If hosted CI was not run, record it as `UNVERIFIED`. Local success is not hosted-CI evidence. If a workflow replacement is intentionally deferred, record the remaining difference and owner; do not claim the CI migration is complete.
+This phase is inventory only. Do not edit workflow or release files here. The separate [Apply Approved CI and Release Differences](#apply-approved-ci-and-release-differences) phase follows local verification and optional in-game smoke. The generated Windows .NET 10 workflows are a target contract only after the required local gates pass.
 
 ## Verify and Record Migration Evidence
 
@@ -513,154 +511,17 @@ Owner: <person responsible for the remaining check>
 
 If it is run, record the Blasphemous version, Mod build version, prerequisites, scenario, expected behavior, observed behavior, and log or screenshot evidence.
 
+## Apply Approved CI and Release Differences
+
+Begin this phase only after the required local gates in [Verify and Record Migration Evidence](#verify-and-record-migration-evidence) pass and the optional smoke result is recorded. Inventory is not approval. Get explicit user approval for each proposed workflow or release difference, then apply only the differences the user approved. Preserve all other workflow, release, and deployment behavior.
+
+If an approved change affects local behavior, rerun the affected gates immediately. After the final approved workflow or release change is committed, confirm a clean working tree and rerun the complete required local gate set. Keep the resulting evidence outside the repository and record the exact 40-character final HEAD. Bind the local results and any applicable hosted-CI result to that same HEAD.
+
+Run applicable hosted CI against the exact final HEAD; hosted CI passes on that same HEAD only after a successful applicable run. Hosted CI is `UNVERIFIED` until an applicable run succeeds; `UNVERIFIED` cannot satisfy completion. A failed required local or hosted check, or any unapproved required residual gap, uses `BLOCKED — DECISION REQUIRED` under [Stop States](#stop-states). Any later commit invalidates both local and hosted evidence; rerun the complete required local gate set and obtain a successful hosted run on the new exact final HEAD.
+
 ## Rollback
 
-### Before merge
-
-For a Git repository, first confirm there are no tracked changes, then switch back to the original branch:
-
-```powershell
-git status --short --untracked-files=no
-git switch '<original-branch>'
-git status --short --ignored --untracked-files=all
-git rev-parse HEAD
-```
-
-The first command must print nothing. If it reports tracked changes, stop and ask the owner how to preserve them; do not carry them into the original branch. After the switch, the full status may still list migration-only untracked and ignored files, which Git preserves across the branch switch. Compare that output with the ignored-file inventory recorded before migration. Record and move migration-only untracked, generated, or newly ignored paths to a quarantine location with explicit approval; do not delete them permanently and do not use `git clean`. If the switch refuses because untracked files would be overwritten, stop and ask the owner. Restore any ignored or untracked files that migration touched from the verified local backup. Compare the printed SHA with the original SHA recorded before migration.
-
-### After merge
-
-Run rollback from the branch that received the work. For a migration merged through a merge commit, confirm the mainline parent and prepare the revert without committing:
-
-```powershell
-git show --no-patch --format=%P '<merge-commit>'
-git revert --no-commit -m 1 '<merge-commit>'
-```
-
-Use `-m 1` only when the first parent is the branch that received the merge; otherwise stop and confirm the mainline parent with the owner. For a linear migration with multiple commits and no merge commit, revert the whole range without committing:
-
-```powershell
-git revert --no-commit '<oldest-migration-commit>^..<newest-migration-commit>'
-```
-
-For a migration squashed into one non-merge commit, revert that single commit:
-
-```powershell
-git revert --no-commit '<squash-commit>'
-```
-
-Review `git status --short` and `git diff --cached '<recorded-start-sha>' --` against the original starting SHA. Request separate explicit approval before creating the revert commit, then run `git commit -m "revert: remove template migration"`. Reset-hard, force-push, and destructive cleanup are not valid migration recovery.
-
-### Non-Git restore
-
-Restore changes contents and therefore requires explicit approval for the exact backup path and target path. In a new PowerShell session, re-create `$repo`, `$containingRoot`, `$backupRoot`, `$backup`, `Test-IsWithin`, `Assert-NoReparsePointAncestor`, and `Get-RepositoryManifest` from the backup section. Repeat the path safety checks before reading or changing target contents:
-
-```powershell
-Assert-NoReparsePointAncestor $repo
-Assert-NoReparsePointAncestor $backupRoot
-Assert-NoReparsePointAncestor $backup
-if ($containingRoot) {
-  Assert-NoReparsePointAncestor $containingRoot
-}
-foreach ($candidate in @($backupRoot, $backup)) {
-  if ((Test-IsWithin $candidate $repo) -or (Test-IsWithin $repo $candidate)) {
-    throw "The backup and target repository must not contain each other: $candidate"
-  }
-  if (
-    $containingRoot -and
-    ((Test-IsWithin $candidate $containingRoot) -or
-      (Test-IsWithin $containingRoot $candidate))
-  ) {
-    throw "The backup must not overlap the containing worktree: $candidate"
-  }
-}
-if (-not (Test-Path -LiteralPath $backup -PathType Container)) {
-  throw "The approved backup directory does not exist: $backup"
-}
-$links = @(
-  Get-ChildItem -LiteralPath $repo -Recurse -Force |
-    Where-Object {
-      ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
-    }
-)
-if ($links.Count -ne 0) {
-  throw "Resolve repository reparse points before restore: $($links.FullName)"
-}
-```
-
-1. Verify the backup against the persisted reference manifest and stop if it fails:
-
-   ```powershell
-   $referenceManifest = @(
-     Get-Content -LiteralPath (
-       Join-Path $backupRoot 'repository-manifest.json'
-     ) -Raw | ConvertFrom-Json
-   )
-   $backupManifest = Get-RepositoryManifest $backup
-   $differences = Compare-Object $referenceManifest $backupManifest `
-     -Property RelativePath, Hash
-   if ($referenceManifest.Count -ne $backupManifest.Count -or $differences) {
-     throw "Backup verification failed."
-   }
-   ```
-
-2. Compare the current repository manifest with the verified backup manifest and build explicit added, deleted, and modified sets:
-
-   ```powershell
-   $currentManifest = Get-RepositoryManifest $repo
-   $backupByPath = @{}
-   foreach ($item in $backupManifest) {
-     $backupByPath[$item.RelativePath] = $item.Hash
-   }
-   $currentByPath = @{}
-   foreach ($item in $currentManifest) {
-     $currentByPath[$item.RelativePath] = $item.Hash
-   }
-   $added = @(
-     $currentByPath.Keys | Where-Object {
-       -not $backupByPath.ContainsKey($_)
-     }
-   )
-   $deleted = @(
-     $backupByPath.Keys | Where-Object {
-       -not $currentByPath.ContainsKey($_)
-     }
-   )
-   $modified = @(
-     $currentByPath.Keys | Where-Object {
-       $backupByPath.ContainsKey($_) -and
-       $backupByPath[$_] -ne $currentByPath[$_]
-     }
-   )
-   "Added:"; $added
-   "Deleted:"; $deleted
-   "Modified:"; $modified
-   ```
-
-`$added` contains paths only in the current repository. `$deleted` contains paths only in the backup. `$modified` contains paths present in both with different hashes.
-
-3. Move files in `$added` to an approved quarantine location outside the repository. Do not delete them permanently.
-4. Copy files in `$modified` from the backup over the target only after approval.
-5. Copy files in `$deleted` from the backup back to their recorded relative paths, recreating any missing parent directories.
-6. Re-run the comparison and confirm `$added`, `$deleted`, and `$modified` are empty.
-7. Run the original build and test commands from the inventory.
-
-When available, test the procedure in a disposable copy before using it on the only copy. Record either:
-
-```text
-Restore: TESTED
-Evidence: <commands, manifest output, and build/test result>
-```
-
-or:
-
-```text
-Restore: NOT RUN
-Reason: <why the restore was not exercised>
-Owner: <person responsible for the follow-up>
-```
-
-Do not claim restore was tested unless those steps were actually executed.
+Use the [Migration Recovery Reference](migrate-mod-repository-recovery.md#rollback) for the ordered Git rollback and Non-Git restore procedures. Starting-state recording and backup creation remain in [Record the Starting State and Prepare Recovery](#record-the-starting-state-and-prepare-recovery). The recovery reference owns only those operations; this guide retains the migration stop states and completion checklist.
 
 ## Stop States
 
@@ -668,7 +529,7 @@ Use these stop states exactly:
 
 `BLOCKED — DECISION REQUIRED`
 
-Use when the next required step needs a user decision, including approval of a structural refactor or an external-contract rename. Preserve the branch or backup, record the evidence, and stop before dependent edits.
+Use when a required local or hosted check fails, an unapproved required residual gap remains, or the next step needs a user decision, including approval of a structural refactor or an external-contract rename. Preserve the branch or backup, record the evidence, and stop before dependent edits.
 
 `UNSUPPORTED FOR THIS MIGRATION RUN`
 
@@ -676,27 +537,29 @@ Use when the supported-input boundary or an infeasible required refactor makes a
 
 `PARTIAL`
 
-Use only when the user explicitly approves a narrowed scope. Record every check retained as `PARTIAL`; a named follow-up does not replace that approval. A partial check is not a completed migration. This is a migration-run state, not a GitHub issue-closure state. Issue closure follows the repository's delivery rules and requires the exact HEAD plus matching evidence, or an explicitly permitted closure state; a migration-local `PARTIAL` cannot supply either.
+Use only after the user explicitly approves a narrowed scope for a deferred approved replacement, an unavailable required verification, or an unrun restore. Record each remaining check, its owner, and its next action; a named follow-up does not replace approval. `PARTIAL` never means the migration is complete. A migration-local `PARTIAL` does not itself establish completion, closure evidence, or closure eligibility.
 
 ## Completion Checklist
 
-The migration is complete only when all applicable checks pass:
+The migration is complete only when all required local checks pass, approved CI and release differences are applied, applicable hosted CI passes on the exact final 40-character HEAD, and recovery is `TESTED`. `UNVERIFIED` and `PARTIAL` cannot satisfy completion.
 
 - [ ] The repository is within the supported Windows `net35` .NET boundary. If it is not, stop as `UNSUPPORTED FOR THIS MIGRATION RUN`; do not use this checklist as migration completion evidence.
 - [ ] A clean Git branch was created from the exact recorded SHA, or a complete external backup outside the target and containing worktree was verified before the first edit.
 - [ ] Ignored or untracked files that migration may touch were backed up before the first edit and restored when necessary.
 - [ ] The inventory covers identity, layout, public surfaces, package contracts, resources, deployment, CI, secrets, generated files, and ignored files.
 - [ ] Display Title, Author, Machine Identifier, plugin assembly, namespaces, public APIs, package identity, and `BepInDependency` IDs are preserved unless a separate breaking change was approved.
-- [ ] The existing layout is preserved, or a required gate and approved smallest refactor justify the change.
+- [ ] The existing layout is preserved, or any layout refactor satisfies the [Structural Refactor Gate](#structural-refactor-gate).
 - [ ] Required differences are classified and applied; intentional custom behavior is preserved.
 - [ ] Every recorded test project passes; the `net48` Automated Test Project is present, non-packable, and not part of the Mod Package.
 - [ ] Restore, `net35` build, recorded tests, package inspection, solution membership, and public-surface comparison pass.
 - [ ] Deployment targets were inspected before the first build; no copy, write, move, or directory-removal operation can bypass `DeployToGame` and `DevFolder`.
 - [ ] The first build explicitly set `DeployToGame=false` against an isolated probe and left it empty; the normal build and tests ran afterward. The explicit opt-in deployment check writes fresh output, or is recorded as `NOT RUN` with reason and owner.
 - [ ] Format checks pass when available, or are recorded as `NOT RUN` with reason and owner.
-- [ ] Existing workflow semantics and secret names/scopes were inventoried before any replacement; hosted CI is marked `UNVERIFIED` when not run.
+- [ ] Existing workflow semantics and secret names/scopes were inventoried before any replacement; only the differences approved in the separate application phase were applied.
+- [ ] Local evidence and the applicable successful hosted-CI result are stored outside the repository and bound to the same exact 40-character final HEAD; any later commit invalidates both.
+- [ ] Applicable hosted CI passes on the exact final HEAD; until an applicable run succeeds, record `UNVERIFIED` and do not claim completion.
 - [ ] In-game smoke is recorded with evidence, or as `NOT RUN` with reason and owner.
 - [ ] Git rollback records the branch switch, newly untracked/ignored paths, and the correct one-commit, squash, or merge revert path, or non-Git restore covers added/modified/deleted files with the required approval.
-- [ ] Backup restore is recorded as `TESTED` with evidence, or as `NOT RUN` with reason and owner.
+- [ ] Backup restore is recorded as `TESTED` with evidence. `NOT RUN` cannot satisfy completion and is migration-local `PARTIAL` only under the approved-scope rule in Stop States.
 - [ ] No reset-hard, force-push, destructive cleanup, or permanent deletion was used.
 - [ ] No completion is claimed while any required decision or verification remains unresolved.
