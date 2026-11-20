@@ -4,6 +4,8 @@ Use this guide for an existing supported Blasphemous 1 Mod repository. The migra
 
 The representative shape is a repository such as `Blasphemous.ForgivingSpikes`: a `net35` project in a subdirectory of a solution, no adjacent Automated Test Project, an inline build and deployment target, and CI that predates the generated baseline. Treat that repository as evidence only. Re-run every inventory step against the repository being migrated, and do not modify the representative repository.
 
+Before beginning, complete the [common host prerequisites and clone step](../README.md#prerequisites).
+
 ## Supported Inputs
 
 The migration path supports an ordinary Windows .NET repository that:
@@ -13,24 +15,13 @@ The migration path supports an ordinary Windows .NET repository that:
 - Builds against supported Blasphemous 1 and ModdingAPI package references.
 - Can be restored, built, tested, packaged, and validated on Windows.
 
-Use Windows with:
-
-- A working .NET SDK 10 installation.
-- NuGet access to the feeds recorded in the repository.
-- Python 3.9 or later when generating a clean reference repository.
-- Ripgrep (`rg`) for the read-only inventory commands, or equivalent search commands.
-- Git for the Git recovery path; non-Git repositories do not require it.
-
-Verify the host:
+The migration procedure also uses Ripgrep (`rg`) for its read-only inventory commands. Verify it:
 
 ```powershell
-[System.Environment]::OSVersion.Version
-dotnet --version
-python --version
 rg --version
 ```
 
-Expected outcomes are Windows, a `dotnet --version` value starting with `10.`, Python 3.9 or later when needed, and a working `rg`. For a Git repository, also verify `git --version`.
+Git is required for the Git recovery path; non-Git repositories do not require it.
 
 Inspect the repository inputs:
 

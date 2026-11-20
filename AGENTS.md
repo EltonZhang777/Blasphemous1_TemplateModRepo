@@ -10,9 +10,10 @@ An optional untracked `AGENTS.local.md` may supplement this file for one checkou
 
 ## Documentation ownership
 
-- The root README contains only the project introduction, clone path, prerequisites, links to the creation and migration paths, contribution entry, and license.
+- The root README contains only the project introduction, common prerequisites, clone path, links to the creation and migration paths, the supplemental Test Template Package link, contribution entry, and license.
 - [Create a Mod repository](docs/create-mod-repository.md) owns the creation journey.
 - [Migrate a Mod repository](docs/migrate-mod-repository.md) owns the in-place migration journey.
+- [Test Template Package](Templates/Blasphemous1.ModTest.Templates/README.md) is the supported supplemental user-document path for its standalone package, target-project behavior, and in-game startup verification.
 - This file owns maintainer and agent rules.
 - [GLOSSARY.md](GLOSSARY.md) owns domain vocabulary, and [docs/adr/](docs/adr/) owns architecture decisions.
 - [docs/agents/](docs/agents/) owns issue, triage, and domain workflow details.

@@ -4,39 +4,9 @@ This guide takes you from a checkout of this repository to a generated and verif
 
 ## Prerequisites
 
-Use a Windows machine with:
-
-- .NET SDK 10.
-- Python 3.9 or later. Python 3.9 is the verified minimum.
-- Git, if you still need to clone this repository.
-- Access to NuGet when restoring the generated solution.
-
-Open a new PowerShell window after installing a tool, then verify all required commands:
-
-```powershell
-[System.Environment]::OSVersion.Version
-dotnet --version
-python --version
-git --version
-```
-
-Expected outcomes:
-
-- The operating system is Windows.
-- `dotnet --version` starts with `10.`.
-- `python --version` reports Python 3.9 or later.
-- `git --version` reports an installed Git client.
-
-The supported creation environment is Windows with .NET SDK 10. Linux and macOS are not part of this creation path.
+Complete the [common host prerequisites and clone step](../README.md#prerequisites) before continuing.
 
 ## Install the Official Template Baseline
-
-Clone this repository, then change to its root:
-
-```powershell
-git clone https://github.com/EltonZhang777/Blasphemous1_TemplateModRepo.git
-Set-Location .\Blasphemous1_TemplateModRepo
-```
 
 Install the exact Official Template Baseline:
 
@@ -218,8 +188,8 @@ In-game loading is optional and is not part of this creation check. The generate
 
 | Symptom | Cause | Recovery |
 | --- | --- | --- |
-| `dotnet was not found on PATH` | .NET SDK 10 is missing, or the current terminal predates installation. | Install .NET SDK 10, open a new PowerShell window, and rerun `dotnet --version`. |
-| Python cannot be found | Python 3.9 or later is missing, or the current terminal predates installation. | Install Python 3.9 or later, open a new PowerShell window, and rerun `python --version`. |
+| `dotnet was not found on PATH` | .NET SDK 10 is missing, or the current terminal predates installation. | Install .NET SDK 10, open a new PowerShell window, and repeat the validation in [Prerequisites](../README.md#prerequisites). |
+| Python cannot be found | Python 3.9 or later is missing, or the current terminal predates installation. | Install Python 3.9 or later, open a new PowerShell window, and repeat the validation in [Prerequisites](../README.md#prerequisites). |
 | `Blasphemous.Modding.Templates 1.4.1 is required` | The exact package is missing or another version is installed. | Run the uninstall-and-reinstall commands in [Install the Official Template Baseline](#install-the-official-template-baseline), then rerun the Generator Command. |
 | Machine Identifier validation error | The value has separators, is too short or too long, starts with a lowercase letter/digit, collides with a reserved C# or Windows name, or reuses `Main`, `ModInfo`, `ModTemplate`, or `TemplateMod`. | Use a value such as `ExampleMod`, without spaces or punctuation, and rerun with an output path that does not exist. |
 | Display Title or Author validation error | The value is empty after trimming, exceeds 80 characters, or contains control characters, line breaks, or an unsupported reserved token. | Correct the text and rerun the Generator Command. |
@@ -240,8 +210,7 @@ This guide stops at a validated generated directory. Do not run `git init`, `git
 
 The creation path is complete only when all of these checks pass:
 
-- [ ] `dotnet --version` reports .NET SDK 10.
-- [ ] `python --version` reports Python 3.9 or later.
+- [ ] The common host prerequisites in the root README are satisfied.
 - [ ] The installed Official Template Baseline is exactly `1.4.1`.
 - [ ] The Generator Command prints `Created ...` for a new output path.
 - [ ] The expected generated project, test, resource, documentation, and workflow files exist.

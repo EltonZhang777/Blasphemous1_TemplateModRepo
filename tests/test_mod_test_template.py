@@ -474,6 +474,99 @@ class TemplatePackageDocumentationTests(unittest.TestCase):
 
 
 class RootDocumentationTests(unittest.TestCase):
+    def test_root_owns_common_setup_and_primary_paths(self):
+        readme = ROOT_README.read_text(encoding="utf-8")
+        headings = level_two_headings(ROOT_README)
+        self.assertLess(
+            headings.index("Prerequisites"),
+            headings.index("Clone the Repository"),
+        )
+        self.assertLess(
+            headings.index("Clone the Repository"),
+            headings.index("Choose your path"),
+        )
+
+        prerequisites = markdown_section(
+            ROOT_README,
+            "## Prerequisites",
+            "## Clone the Repository",
+        )
+        for marker in (
+            "common host prerequisites",
+            "Windows",
+            ".NET SDK 10",
+            "Python 3.9 or later",
+            "Git",
+            "NuGet access",
+            "[System.Environment]::OSVersion.Version",
+            "dotnet --version",
+            "python --version",
+            "git --version",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, prerequisites)
+
+        clone = markdown_section(
+            ROOT_README,
+            "## Clone the Repository",
+            "## Choose your path",
+        )
+        self.assertIn(
+            "git clone https://github.com/EltonZhang777/"
+            "Blasphemous1_TemplateModRepo.git",
+            clone,
+        )
+
+        paths = markdown_section(
+            ROOT_README,
+            "## Choose your path",
+            "## Contributing",
+        )
+        create_link = "[Create a new Mod repository](docs/create-mod-repository.md)"
+        migration_link = (
+            "[Migrate an existing Mod repository]"
+            "(docs/migrate-mod-repository.md)"
+        )
+        package_link = (
+            "[Test Template Package verification journey]"
+            "(Templates/Blasphemous1.ModTest.Templates/README.md)"
+        )
+        self.assertLess(paths.index(create_link), paths.index(migration_link))
+        self.assertLess(paths.index(migration_link), paths.index(package_link))
+        self.assertIn(
+            "The Generator Command creates new Mod repositories only.",
+            readme,
+        )
+        self.assertIn("Existing repositories use the in-place migration path.", readme)
+        self.assertIn(
+            "preserves Mod Identity and layout by default and permits only an "
+            "approved structural refactor required by a failing gate",
+            paths,
+        )
+
+        common_setup_link = (
+            "[common host prerequisites and clone step](../README.md#prerequisites)"
+        )
+        self.assertIn(
+            common_setup_link,
+            CREATE_GUIDE.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            common_setup_link,
+            MIGRATION_GUIDE.read_text(encoding="utf-8"),
+        )
+        for guide in (CREATE_GUIDE, MIGRATION_GUIDE):
+            text = guide.read_text(encoding="utf-8")
+            for duplicated_setup in (
+                "git clone https://github.com/EltonZhang777/",
+                "[System.Environment]::OSVersion.Version",
+                "dotnet --version",
+                "python --version",
+                "git --version",
+            ):
+                with self.subTest(guide=guide.name, marker=duplicated_setup):
+                    self.assertNotIn(duplicated_setup, text)
+
     def test_guides_are_discoverable_and_complete(self):
         self.assertIn(
             "## Choose your path",
@@ -741,8 +834,8 @@ class RootDocumentationTests(unittest.TestCase):
 
         self.assertEqual(
             [
-                "Clone the Repository",
                 "Prerequisites",
+                "Clone the Repository",
                 "Choose your path",
                 "Contributing",
                 "License",
@@ -760,7 +853,11 @@ class RootDocumentationTests(unittest.TestCase):
             readme,
         )
         self.assertIn("[LICENSE](LICENSE)", readme)
-        self.assertIn("standalone `Blasphemous1.ModTest.Templates`", readme)
+        self.assertIn(
+            "[Test Template Package verification journey]"
+            "(Templates/Blasphemous1.ModTest.Templates/README.md)",
+            readme,
+        )
         for marker in (
             "dotnet new install Blasphemous.Modding.Templates",
             "dotnet pack .\\Templates",
@@ -801,6 +898,7 @@ class RootDocumentationTests(unittest.TestCase):
             "docs/adr/",
             "AGENTS.local.md",
             "Templates/Blasphemous1.ModTest.Templates/README.md",
+            "supported supplemental user-document path",
             ".github/workflows/release.yml",
             "trusted publishing",
         ):
