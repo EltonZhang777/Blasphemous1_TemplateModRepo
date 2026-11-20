@@ -4,7 +4,7 @@ Use this guide for an existing supported Blasphemous 1 Mod repository. The migra
 
 The representative shape is a repository such as `Blasphemous.ForgivingSpikes`: a `net35` project in a subdirectory of a solution, no adjacent Automated Test Project, an inline build and deployment target, and CI that predates the generated baseline. Treat that repository as evidence only. Re-run every inventory step against the repository being migrated, and do not modify the representative repository.
 
-Before beginning, complete the [common host prerequisites and clone step](../README.md#prerequisites).
+Before beginning, complete the [common host prerequisites](../README.md#prerequisites) and [clone this repository](../README.md#clone-the-repository).
 
 ## Supported Inputs
 

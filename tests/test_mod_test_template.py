@@ -615,10 +615,13 @@ class RootDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(root_setup_link=root_setup_link):
                 self.assertIn(root_setup_link, create_guide)
-        self.assertIn(
-            "[common host prerequisites and clone step](../README.md#prerequisites)",
-            MIGRATION_GUIDE.read_text(encoding="utf-8"),
-        )
+        migration_guide = MIGRATION_GUIDE.read_text(encoding="utf-8")
+        for root_setup_link in (
+            "[common host prerequisites](../README.md#prerequisites)",
+            "[clone this repository](../README.md#clone-the-repository)",
+        ):
+            with self.subTest(root_setup_link=root_setup_link):
+                self.assertIn(root_setup_link, migration_guide)
         for guide in (CREATE_GUIDE, MIGRATION_GUIDE):
             text = guide.read_text(encoding="utf-8")
             for duplicated_setup in (
@@ -1322,9 +1325,17 @@ class RootDocumentationTests(unittest.TestCase):
         assert_consumer_safety_warning(self, creation_install)
         assert_consumer_safety_warning(self, package_install)
 
-        assert_local_links_resolve(
+        assert_markdown_contract(
             self,
-            (ROOT_README, ROOT_AGENTS, CREATE_GUIDE, MIGRATION_GUIDE, TEMPLATE_README),
+            context="Meta-Repository Documentation",
+            owner_root=REPO_ROOT,
+            sources=(
+                ROOT_README,
+                ROOT_AGENTS,
+                CREATE_GUIDE,
+                MIGRATION_GUIDE,
+                TEMPLATE_README,
+            ),
         )
 
     def test_user_and_maintainer_ownership_boundary(self):
