@@ -1,49 +1,19 @@
-# Domain Docs
+# Domain Guidance
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+This generated repository contains one Blasphemous 1 Mod. `README.md` owns author workflows, and `AGENTS.md` owns agent boundaries.
 
-## Before exploring, read these
+## Route by repository layout
 
-- **`GLOSSARY.md`** at the repo root, or
-- **`GLOSSARY-MAP.md`** at the repo root if it exists: it points at one `GLOSSARY.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+- `@PROJECT_NAME@.csproj`, `Main.cs`, and `ModInfo.cs` define the Mod entry and identity.
+- `@PROJECT_NAME@.Tests` contains the Automated Test Project and does not require the game.
+- `resources/` contains Mod resources packaged with the main plugin.
+- `PackageMod.targets` defines package construction in this layout.
+- `docs/agents/` owns issue operations and triage-label definitions.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+## Use repository vocabulary
 
-## File structure
+Use the names already defined by the README, root project, ModInfo, tests, and source code. Keep a term consistent across code and documentation, and introduce a new local definition beside the behavior that needs it.
 
-Single-context repo (most repos):
+## Keep goals explicit
 
-```
-/
-├── GLOSSARY.md
-├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-└── src/
-```
-
-Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
-
-```
-/
-├── GLOSSARY-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
-    │   ├── GLOSSARY.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
-        ├── GLOSSARY.md
-        └── docs/adr/
-```
-
-## Use the glossary's vocabulary
-
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
-
-If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
+Start from the requested Mod behavior and identify the project, test, resource, packaging, or workflow files it actually changes. Keep each change within that scope.
