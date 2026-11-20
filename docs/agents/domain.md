@@ -1,49 +1,31 @@
 # Domain Docs
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+Use this repository's vocabulary and architecture decisions while exploring or changing the codebase.
 
 ## Before exploring, read these
 
-- **`GLOSSARY.md`** at the repo root, or
-- **`GLOSSARY-MAP.md`** at the repo root if it exists: it points at one `GLOSSARY.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+- Read **`GLOSSARY.md`** at the repository root.
+- Read the accepted decisions under **`docs/adr/`** that touch the area you will work on.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+This meta-repository keeps its domain vocabulary at `GLOSSARY.md` and its architecture decisions at `docs/adr/`. The files under `TemplateRepo/` become Generated Repository Documentation after generation and are a separate documentation context.
 
-## File structure
-
-Single-context repo (most repos):
-
-```
-/
-├── GLOSSARY.md
-├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-└── src/
-```
-
-Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
-
-```
-/
-├── GLOSSARY-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
-    │   ├── GLOSSARY.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
-        ├── GLOSSARY.md
-        └── docs/adr/
-```
+Do not create a glossary or architecture decision in advance. If a file relevant to the task does not exist, continue without it.
 
 ## Use the glossary's vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
 
-If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
+If the concept you need is absent, reconsider whether you are inventing terminology. If the current task resolves a real vocabulary gap, update `GLOSSARY.md` directly in the same change.
+
+## Record decisions
+
+If the current task resolves a qualifying architecture decision, record it in a new file under `docs/adr/` using the existing numbered format and state its status.
 
 ## Flag ADR conflicts
 
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
+If a proposed change contradicts an accepted, non-superseded architecture decision:
+
+1. Stop only the affected change. Unaffected work may continue.
+2. Cite the decision and the contradiction.
+3. Ask the maintainer whether to revise the proposal, explicitly supersede the decision, or abandon the conflicting part.
+4. Do not silently edit the decision or claim the affected work complete.
