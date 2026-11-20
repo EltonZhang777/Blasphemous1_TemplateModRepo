@@ -70,6 +70,8 @@ git switch -c migrate/template-baseline '<recorded-start-sha>'
 
 Expected outcome: the new branch points at the recorded SHA and `git status --short` is empty. Use phase-sized commits for inventory, recovery, tests/package, CI, and validation. Commit, push, and pull request actions remain separately approval-gated.
 
+The ordered Git rollback procedure is in [Migration Recovery Reference](migrate-mod-repository-recovery.md#rollback).
+
 ### Non-Git repository
 
 Create a complete backup outside both the target repository and any containing worktree. Use a new directory that does not already exist:
@@ -187,7 +189,7 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 
 Expected outcome: both manifests have the same count and `Compare-Object` returns no differences, and `repository-manifest.json` exists under `$backupRoot`. Keep that file with the backup; it is the reference for restore verification. If the copy, verification, or manifest write fails, stop before the first edit.
 
-A backup is not proof that restore works. The approved restore procedure is in [Rollback](#rollback); do not claim it was tested unless it was actually run.
+A backup is not proof that restore works. The approved procedure is in [Migration Recovery Reference](migrate-mod-repository-recovery.md#rollback); do not claim it was tested unless it was actually run.
 
 ## Inventory Before Editing
 
@@ -519,152 +521,7 @@ Run applicable hosted CI against the exact final HEAD; hosted CI passes on that 
 
 ## Rollback
 
-### Before merge
-
-For a Git repository, first confirm there are no tracked changes, then switch back to the original branch:
-
-```powershell
-git status --short --untracked-files=no
-git switch '<original-branch>'
-git status --short --ignored --untracked-files=all
-git rev-parse HEAD
-```
-
-The first command must print nothing. If it reports tracked changes, stop and ask the owner how to preserve them; do not carry them into the original branch. After the switch, the full status may still list migration-only untracked and ignored files, which Git preserves across the branch switch. Compare that output with the ignored-file inventory recorded before migration. Record and move migration-only untracked, generated, or newly ignored paths to a quarantine location with explicit approval; do not delete them permanently and do not use `git clean`. If the switch refuses because untracked files would be overwritten, stop and ask the owner. Restore any ignored or untracked files that migration touched from the verified local backup. Compare the printed SHA with the original SHA recorded before migration.
-
-### After merge
-
-Run rollback from the branch that received the work. For a migration merged through a merge commit, confirm the mainline parent and prepare the revert without committing:
-
-```powershell
-git show --no-patch --format=%P '<merge-commit>'
-git revert --no-commit -m 1 '<merge-commit>'
-```
-
-Use `-m 1` only when the first parent is the branch that received the merge; otherwise stop and confirm the mainline parent with the owner. For a linear migration with multiple commits and no merge commit, revert the whole range without committing:
-
-```powershell
-git revert --no-commit '<oldest-migration-commit>^..<newest-migration-commit>'
-```
-
-For a migration squashed into one non-merge commit, revert that single commit:
-
-```powershell
-git revert --no-commit '<squash-commit>'
-```
-
-Review `git status --short` and `git diff --cached '<recorded-start-sha>' --` against the original starting SHA. Request separate explicit approval before creating the revert commit, then run `git commit -m "revert: remove template migration"`. Reset-hard, force-push, and destructive cleanup are not valid migration recovery.
-
-### Non-Git restore
-
-Restore changes contents and therefore requires explicit approval for the exact backup path and target path. In a new PowerShell session, re-create `$repo`, `$containingRoot`, `$backupRoot`, `$backup`, `Test-IsWithin`, `Assert-NoReparsePointAncestor`, and `Get-RepositoryManifest` from the backup section. Repeat the path safety checks before reading or changing target contents:
-
-```powershell
-Assert-NoReparsePointAncestor $repo
-Assert-NoReparsePointAncestor $backupRoot
-Assert-NoReparsePointAncestor $backup
-if ($containingRoot) {
-  Assert-NoReparsePointAncestor $containingRoot
-}
-foreach ($candidate in @($backupRoot, $backup)) {
-  if ((Test-IsWithin $candidate $repo) -or (Test-IsWithin $repo $candidate)) {
-    throw "The backup and target repository must not contain each other: $candidate"
-  }
-  if (
-    $containingRoot -and
-    ((Test-IsWithin $candidate $containingRoot) -or
-      (Test-IsWithin $containingRoot $candidate))
-  ) {
-    throw "The backup must not overlap the containing worktree: $candidate"
-  }
-}
-if (-not (Test-Path -LiteralPath $backup -PathType Container)) {
-  throw "The approved backup directory does not exist: $backup"
-}
-$links = @(
-  Get-ChildItem -LiteralPath $repo -Recurse -Force |
-    Where-Object {
-      ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
-    }
-)
-if ($links.Count -ne 0) {
-  throw "Resolve repository reparse points before restore: $($links.FullName)"
-}
-```
-
-1. Verify the backup against the persisted reference manifest and stop if it fails:
-
-   ```powershell
-   $referenceManifest = @(
-     Get-Content -LiteralPath (
-       Join-Path $backupRoot 'repository-manifest.json'
-     ) -Raw | ConvertFrom-Json
-   )
-   $backupManifest = Get-RepositoryManifest $backup
-   $differences = Compare-Object $referenceManifest $backupManifest `
-     -Property RelativePath, Hash
-   if ($referenceManifest.Count -ne $backupManifest.Count -or $differences) {
-     throw "Backup verification failed."
-   }
-   ```
-
-2. Compare the current repository manifest with the verified backup manifest and build explicit added, deleted, and modified sets:
-
-   ```powershell
-   $currentManifest = Get-RepositoryManifest $repo
-   $backupByPath = @{}
-   foreach ($item in $backupManifest) {
-     $backupByPath[$item.RelativePath] = $item.Hash
-   }
-   $currentByPath = @{}
-   foreach ($item in $currentManifest) {
-     $currentByPath[$item.RelativePath] = $item.Hash
-   }
-   $added = @(
-     $currentByPath.Keys | Where-Object {
-       -not $backupByPath.ContainsKey($_)
-     }
-   )
-   $deleted = @(
-     $backupByPath.Keys | Where-Object {
-       -not $currentByPath.ContainsKey($_)
-     }
-   )
-   $modified = @(
-     $currentByPath.Keys | Where-Object {
-       $backupByPath.ContainsKey($_) -and
-       $backupByPath[$_] -ne $currentByPath[$_]
-     }
-   )
-   "Added:"; $added
-   "Deleted:"; $deleted
-   "Modified:"; $modified
-   ```
-
-`$added` contains paths only in the current repository. `$deleted` contains paths only in the backup. `$modified` contains paths present in both with different hashes.
-
-3. Move files in `$added` to an approved quarantine location outside the repository. Do not delete them permanently.
-4. Copy files in `$modified` from the backup over the target only after approval.
-5. Copy files in `$deleted` from the backup back to their recorded relative paths, recreating any missing parent directories.
-6. Re-run the comparison and confirm `$added`, `$deleted`, and `$modified` are empty.
-7. Run the original build and test commands from the inventory.
-
-When available, test the procedure in a disposable copy before using it on the only copy. Record either:
-
-```text
-Restore: TESTED
-Evidence: <commands, manifest output, and build/test result>
-```
-
-or:
-
-```text
-Restore: NOT RUN
-Reason: <why the restore was not exercised>
-Owner: <person responsible for the follow-up>
-```
-
-Do not claim restore was tested unless those steps were actually executed.
+Use the [Migration Recovery Reference](migrate-mod-repository-recovery.md#rollback) for the ordered Git rollback and Non-Git restore procedures. Starting-state recording and backup creation remain in [Record the Starting State and Prepare Recovery](#record-the-starting-state-and-prepare-recovery). The recovery reference owns only those operations; this guide retains the migration stop states and completion checklist.
 
 ## Stop States
 
