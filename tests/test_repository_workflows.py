@@ -1,3 +1,4 @@
+import json
 import re
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from workflow_contract import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+GLOBAL_JSON = REPO_ROOT / "global.json"
 VALIDATE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate.yml"
 SPEC_VALIDATE_WORKFLOW = (
     REPO_ROOT / ".github" / "workflows" / "spec-validate.yml"
@@ -18,6 +20,13 @@ RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 
 
 class RepositoryWorkflowTests(unittest.TestCase):
+    def test_dotnet_sdk_is_pinned_to_ten(self):
+        sdk = json.loads(GLOBAL_JSON.read_text(encoding="utf-8"))["sdk"]
+
+        self.assertEqual(sdk["version"], "10.0.100")
+        self.assertEqual(sdk["rollForward"], "latestFeature")
+        self.assertFalse(sdk["allowPrerelease"])
+
     def test_all_workflows_use_supported_external_actions(self):
         workflows = assert_supported_workflow_actions(REPO_ROOT)
 

@@ -15,6 +15,7 @@ Several approved specifications integrate concurrently on separate branches. The
 - Add `.github/workflows/spec-validate.yml` as a caller for pushes to `spec-ci/**`. It invokes the existing reusable `validate.yml` workflow with `contents: read`.
 - Keep `validate.yml` direct triggers for `main` and `test-ci` unchanged. The caller is an additional event surface, not a replacement for those triggers.
 - Use one integration lane per specification, named `spec-ci/issue-<spec>` and created from one shared bootstrap commit. Advance a lane only by fast-forward integration. Never force-push, and retain the branch after completion unless a separate deletion decision is approved.
+- Pin SDK selection to .NET 10 with the root `global.json` so a newer preinstalled SDK cannot silently replace the documented baseline.
 - Do not add a per-lane concurrency group. Overlapping pushes are correlated by their exact SHA rather than by replacing or cancelling an earlier run.
 - In `validate.yml`, fail before dotnet setup when checkout HEAD differs from the event SHA. On success, record the exact SHA, caller run ID, and caller run URL in the job summary.
 - Treat the recorded caller run as evidence only for the checkout at that SHA. A later commit invalidates earlier local and hosted evidence.
