@@ -544,15 +544,15 @@ class RootDocumentationTests(unittest.TestCase):
             paths,
         )
 
-        common_setup_link = (
-            "[common host prerequisites and clone step](../README.md#prerequisites)"
-        )
+        create_guide = CREATE_GUIDE.read_text(encoding="utf-8")
+        for root_setup_link in (
+            "[common host prerequisites](../README.md#prerequisites)",
+            "[clone this repository](../README.md#clone-the-repository)",
+        ):
+            with self.subTest(root_setup_link=root_setup_link):
+                self.assertIn(root_setup_link, create_guide)
         self.assertIn(
-            common_setup_link,
-            CREATE_GUIDE.read_text(encoding="utf-8"),
-        )
-        self.assertIn(
-            common_setup_link,
+            "[common host prerequisites and clone step](../README.md#prerequisites)",
             MIGRATION_GUIDE.read_text(encoding="utf-8"),
         )
         for guide in (CREATE_GUIDE, MIGRATION_GUIDE):
@@ -759,6 +759,98 @@ class RootDocumentationTests(unittest.TestCase):
             "requires the exact HEAD plus matching evidence",
             text,
         )
+
+    def test_creation_guide_owns_inputs_and_recovery(self):
+        text = CREATE_GUIDE.read_text(encoding="utf-8")
+        prerequisites = markdown_section(
+            CREATE_GUIDE,
+            "## Prerequisites",
+            "## Install the Official Template Baseline",
+        )
+        for root_setup_link in (
+            "[common host prerequisites](../README.md#prerequisites)",
+            "[clone this repository](../README.md#clone-the-repository)",
+        ):
+            self.assertIn(root_setup_link, prerequisites)
+        for repeated_setup in (
+            "[System.Environment]::OSVersion.Version",
+            "dotnet --version",
+            "python --version",
+            "git --version",
+            "git clone https://github.com/EltonZhang777/",
+        ):
+            with self.subTest(repeated_setup=repeated_setup):
+                self.assertNotIn(repeated_setup, text)
+
+        install = markdown_section(
+            CREATE_GUIDE,
+            "## Install the Official Template Baseline",
+            "## Create the Mod Repository",
+        )
+        warning = "custom .NET CLI home"
+        self.assertLess(install.index(warning), install.index("dotnet new install"))
+        for marker in (
+            "fixed",
+            "disposable context",
+            "per invocation",
+            "not a guarantee",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, install)
+
+        create = markdown_section(
+            CREATE_GUIDE,
+            "## Create the Mod Repository",
+            "## Expected Result",
+        )
+        command = "python tools/new_blas1mod.py"
+        constraints = "The parameter constraints are:"
+        self.assertEqual(1, text.count(command))
+        self.assertLess(create.index(command), create.index(constraints))
+        for constraint in (
+            "`--name` is the Machine Identifier",
+            "`--title` is the Display Title",
+            "`--author` is the author name",
+            "`--output` is a new directory path",
+            "`--game-version`, which defaults to `4.0.67`",
+        ):
+            with self.subTest(constraint=constraint):
+                self.assertIn(constraint, create[create.index(constraints):])
+        self.assertNotIn("The required inputs are", text)
+        self.assertNotIn("The optional inputs are", text)
+        self.assertNotIn("--with-test-mod", create)
+        self.assertNotIn("Linux and macOS", text)
+
+        optional = markdown_section(
+            CREATE_GUIDE,
+            "## Optional Verification Mod",
+            "## Recover from Common Failures",
+        )
+        self.assertEqual(1, text.count("--with-test-mod"))
+        self.assertIn("Choose this option before generation", optional)
+        self.assertNotIn(command, optional)
+
+        recovery_start = text.index("## Recover from Common Failures")
+        normal_flow = text[:recovery_start]
+        recovery = text[recovery_start:text.index("## Stop Before Git")]
+        for recovery_only in (
+            "Inspect that path for the failing files",
+            "Correct the reported problem",
+            "inspect the diff",
+        ):
+            with self.subTest(recovery_only=recovery_only):
+                self.assertNotIn(recovery_only, normal_flow)
+        for marker in (
+            "Read the preceding error",
+            "inspect the preserved staging directory",
+            "fix that cause",
+            r".\dotnet_format.bat .\Blasphemous.Example.sln",
+            "repeat both format verification commands",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, recovery)
+        self.assertNotIn("git diff", text)
+        self.assertNotIn("inspect the diff", text)
 
     def test_creation_guide_claims_match_template_sources(self):
         text = CREATE_GUIDE.read_text(encoding="utf-8")
