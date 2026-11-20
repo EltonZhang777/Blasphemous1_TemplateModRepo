@@ -29,10 +29,17 @@ TEMPLATE_TEST_PROJECT = (
 WRAPPER = REPO_ROOT / "tools" / "new_blas1mod.py"
 ROOT_README = REPO_ROOT / "README.md"
 ROOT_AGENTS = REPO_ROOT / "AGENTS.md"
+DOMAIN_GUIDE = REPO_ROOT / "docs" / "agents" / "domain.md"
+ISSUE_TRACKER = REPO_ROOT / "docs" / "agents" / "issue-tracker.md"
+TRIAGE_LABELS = REPO_ROOT / "docs" / "agents" / "triage-labels.md"
 CREATE_GUIDE = REPO_ROOT / "docs" / "create-mod-repository.md"
 MIGRATION_GUIDE = REPO_ROOT / "docs" / "migrate-mod-repository.md"
 MARKDOWN_LOCAL_LINK = re.compile(
     r"\[[^\]]+\]\((?!(?:https?://|mailto:))([^)]+)\)"
+)
+WAYFINDING_PREREQUISITE_TERM = re.compile(
+    r"(?i)\b(?:install(?:s|ed|ing|ation)?|setup|set up|set-up|"
+    r"setting up|require(?:s|d)?|prerequisite)\b"
 )
 
 
@@ -73,6 +80,15 @@ def markdown_prose(document):
             yield line
 
 
+def wayfinding_prerequisite_clauses(document):
+    return tuple(
+        clause.strip()
+        for clause in re.split(r"[.!?;]+", document)
+        if "/wayfinder" in clause.lower()
+        and WAYFINDING_PREREQUISITE_TERM.search(clause)
+    )
+
+
 def level_two_headings(document):
     return [
         line[3:].strip()
@@ -105,18 +121,51 @@ def assert_ordered(test_case, text, markers):
         position = next_position
 
 
-def assert_local_links_resolve(test_case, sources):
+def assert_markdown_contract(test_case, *, context, owner_root, sources):
+    boundary = owner_root.resolve()
     for source in sources:
+        source_path = source.resolve()
+        with test_case.subTest(
+            context=context,
+            source=str(source_path),
+            contract="source-boundary",
+        ):
+            test_case.assertTrue(
+                source_path.is_relative_to(boundary),
+                f"{context}: source escapes its documentation boundary: "
+                f"{source_path}",
+            )
+            test_case.assertTrue(
+                source_path.is_file(),
+                f"{context}: source document does not exist: {source_path}",
+            )
         for relative_path, target, anchor in local_link_targets(source):
-            with test_case.subTest(source=source.name, target=str(target)):
+            with test_case.subTest(
+                context=context,
+                source=str(source_path),
+                target=str(target),
+                contract="local-link",
+            ):
                 if relative_path is not None:
-                    test_case.assertFalse(relative_path.is_absolute())
+                    test_case.assertFalse(
+                        relative_path.is_absolute(),
+                        f"{context}: local link must be relative: {relative_path}",
+                    )
                 test_case.assertTrue(
-                    target.resolve().is_relative_to(REPO_ROOT.resolve())
+                    target.resolve().is_relative_to(boundary),
+                    f"{context}: local link escapes its documentation boundary: "
+                    f"{target}",
                 )
-                test_case.assertTrue(target.exists())
+                test_case.assertTrue(
+                    target.exists(),
+                    f"{context}: local link target does not exist: {target}",
+                )
                 if anchor:
-                    test_case.assertIn(anchor, heading_anchors(target))
+                    test_case.assertIn(
+                        anchor,
+                        heading_anchors(target),
+                        f"{context}: missing link anchor #{anchor} in {target}",
+                    )
 
 
 def assert_guide_contract(test_case, guide, root_link, headings):
@@ -414,11 +463,190 @@ class RootDocumentationTests(unittest.TestCase):
             ),
         )
 
-    def test_documentation_links_resolve_locally(self):
-        assert_local_links_resolve(
-            self,
-            (ROOT_README, CREATE_GUIDE, MIGRATION_GUIDE, ROOT_AGENTS),
+    def test_meta_repository_markdown_links_resolve_locally(self):
+        context = "Meta-Repository Documentation"
+        listed = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.md"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
         )
+        self.assertEqual(
+            0,
+            listed.returncode,
+            f"{context}: git ls-files failed: {listed.stderr!r}",
+        )
+        tracked_markdown = tuple(
+            sorted(
+                Path(os.fsdecode(path))
+                for path in listed.stdout.split(b"\0")
+                if path
+            )
+        )
+        sources = tuple(
+            REPO_ROOT / path
+            for path in tracked_markdown
+            if path.parts[0] != "TemplateRepo"
+        )
+
+        self.assertTrue(
+            any(path.parts[0] == "TemplateRepo" for path in tracked_markdown),
+            f"{context}: generated Repository Documentation was not discovered",
+        )
+        self.assertFalse(
+            any(source.parts[0] == "TemplateRepo" for source in sources),
+            f"{context}: generated Repository Documentation entered the scan",
+        )
+        for required in (
+            Path("GLOSSARY.md"),
+            Path("docs/adr/0006-separate-documentation-contexts.md"),
+            Path("Templates/Blasphemous1.ModTest.Templates/README.md"),
+        ):
+            self.assertIn(
+                required,
+                tracked_markdown,
+                f"{context}: required Markdown document missing from scan: "
+                f"{required}",
+            )
+
+        assert_markdown_contract(
+            self,
+            context=context,
+            owner_root=REPO_ROOT,
+            sources=sources,
+        )
+
+    def test_domain_routing_uses_repository_layout_and_stops_adr_conflicts(self):
+        domain = DOMAIN_GUIDE.read_text(encoding="utf-8")
+
+        for marker in (
+            "`GLOSSARY.md`",
+            "`docs/adr/`",
+            "accepted, non-superseded architecture decision",
+            "record it in a new file under `docs/adr/`",
+            "Stop only the affected change",
+            "Cite the decision and the contradiction",
+            "revise the proposal",
+            "explicitly supersede the decision",
+            "abandon the conflicting part",
+        ):
+            self.assertIn(marker, domain)
+        for marker in (
+            "GLOSSARY-MAP.md",
+            "src/<context>/docs/adr/",
+            "0001-event-sourced-orders.md",
+            "0002-postgres-for-write-model.md",
+            "Single-context repo (most repos)",
+            "Multi-context repo",
+            "/domain-modeling",
+            "/grill-with-docs",
+            "/improve-codebase-architecture",
+        ):
+            self.assertNotIn(marker, domain)
+
+    def test_issue_tracker_is_powershell_canonical(self):
+        text = ISSUE_TRACKER.read_text(encoding="utf-8")
+        operations = text.split("## Wayfinding operations", 1)[0]
+
+        for marker in (
+            "### Create an issue",
+            "@'\n## Summary",
+            "gh issue create --title \"...\" --body-file -",
+            "gh issue create --title \"...\" --body-file .\\issue-body.md",
+            "### Read an issue",
+            "gh issue view $IssueNumber --json "
+            "number,title,body,state,labels,comments,parent,subIssues",
+            "### List issues",
+            "gh issue list --state open --json "
+            "number,title,body,state,labels,comments,parent,subIssues",
+            "### Comment on an issue",
+            "gh issue comment $IssueNumber --body-file .\\comment.md",
+            "### Add a label",
+            "gh issue edit $IssueNumber --add-label \"ready-for-agent\"",
+            "### Close an issue",
+            "gh issue close $IssueNumber --reason completed --comment \"...\"",
+            "Pull requests are not a feature-request surface.",
+        ):
+            self.assertIn(marker, operations)
+        for marker in (
+            "Use a heredoc",
+            "When set to",
+            "gh pr ",
+            "## When a skill says",
+            "fetching labels",
+            "<number>",
+            "Read or fetch",
+            "--remove-label",
+        ):
+            self.assertNotIn(marker, operations)
+
+        before_wayfinding, wayfinding = text.split(
+            "## Wayfinding operations", 1
+        )
+        self.assertEqual(0, before_wayfinding.count("/wayfinder"))
+        self.assertIn("Used by `/wayfinder`.", wayfinding)
+        self.assertTrue(wayfinding.startswith("\n\nUsed by `/wayfinder`."))
+        self.assertEqual(1, wayfinding.count("/wayfinder"))
+        self.assertNotIn("```", wayfinding)
+        self.assertEqual((), wayfinding_prerequisite_clauses(wayfinding))
+        self.assertEqual(
+            (
+                "Install /wayfinder first",
+                "Install\n/wayfinder first",
+                "Setting up /wayfinder",
+            ),
+            wayfinding_prerequisite_clauses(
+                "Install /wayfinder first. "
+                "Install\n/wayfinder first. "
+                "Setting up /wayfinder..."
+            ),
+        )
+        self.assertEqual(
+            (),
+            wayfinding_prerequisite_clauses(
+                "Setup status is unrelated; /wayfinder maps the work."
+            ),
+        )
+
+    def test_root_guidance_preserves_release_safety_boundary(self):
+        context = "Meta-Repository Documentation"
+        agents = ROOT_AGENTS.read_text(encoding="utf-8")
+
+        for marker in (
+            "Publishing happens only through "
+            "[`.github/workflows/release.yml`](.github/workflows/release.yml)",
+            "secret values must never be recorded",
+            "checked-out tag commit is an ancestor of the current `main` branch",
+        ):
+            self.assertIn(
+                marker,
+                agents,
+                f"{context}: missing release safety contract: {marker}",
+            )
+        self.assertNotIn(
+            "trusted publishing",
+            agents,
+            f"{context}: root guidance repeats release publication mechanics",
+        )
+
+    def test_triage_labels_are_the_direct_authority(self):
+        text = TRIAGE_LABELS.read_text(encoding="utf-8")
+
+        for label, meaning in (
+            ("needs-triage", "Maintainer needs to evaluate this issue"),
+            ("needs-info", "Waiting on reporter for more information"),
+            ("ready-for-agent", "Fully specified, ready for an AFK agent"),
+            ("ready-for-human", "Requires human implementation"),
+            ("wontfix", "Will not be actioned"),
+        ):
+            self.assertIn(f"`{label}`", text)
+            self.assertIn(meaning, text)
+        for marker in (
+            "mattpocock",
+            "Label in our tracker",
+            "corresponding label",
+            "Edit the right-hand column",
+        ):
+            self.assertNotIn(marker, text)
 
     def test_migration_deployment_safety_order(self):
         text = MIGRATION_GUIDE.read_text(encoding="utf-8")
@@ -677,19 +905,14 @@ class RootDocumentationTests(unittest.TestCase):
             "Documentation ownership",
             "Language",
             "Issue and domain workflow",
+            "Conditional references",
             "Maintainer checks",
-            "Test Template Package",
         ):
             self.assertIn(heading, agents_headings)
         for marker in (
             "python -m unittest discover -s tests -v",
             "BLAS1_DISPOSABLE_TEST_CONTEXT",
             "Disposable Test Context",
-            "dotnet pack .\\Templates\\Blasphemous1.ModTest.Templates",
-            "Get-ChildItem .\\Templates\\Blasphemous1.ModTest.Templates",
-            "dotnet new install $package.FullName",
-            "blasmodtest",
-            "dotnet sln add",
             "docs/agents/issue-tracker.md",
             "docs/agents/triage-labels.md",
             "docs/agents/domain.md",
@@ -698,9 +921,21 @@ class RootDocumentationTests(unittest.TestCase):
             "AGENTS.local.md",
             "Templates/Blasphemous1.ModTest.Templates/README.md",
             ".github/workflows/release.yml",
-            "trusted publishing",
+            "checked-out tag commit is an ancestor of the current `main` branch",
+            "Publishing happens only through "
+            "[`.github/workflows/release.yml`](.github/workflows/release.yml)",
+            "secret values must never be recorded",
         ):
             self.assertIn(marker, agents)
+        for marker in (
+            "dotnet pack .\\Templates\\Blasphemous1.ModTest.Templates",
+            "Get-ChildItem .\\Templates\\Blasphemous1.ModTest.Templates",
+            "dotnet new install $package.FullName",
+            "dotnet new blasmodtest",
+            "dotnet sln add",
+            "trusted publishing",
+        ):
+            self.assertNotIn(marker, agents)
         self.assertNotIn("](AGENTS.local.md)", agents)
 
 
