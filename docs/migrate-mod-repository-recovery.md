@@ -355,11 +355,37 @@ ConvertTo-Json -InputObject $comparisonResult -Depth 5 |
 if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) { throw 'Restore evidence was not written.' }
 
 # Run each original recorded build and test command in the disposable repository only after the comparison is empty.
-# After review and separate owner approval, set $targetRoot = $repo and run Invoke-ManifestRestore $targetRoot.
 # Record exact commands, output, manifest/evidence paths, and result outside the comparison root.
+
+function Invoke-ApprovedOriginalRestore([string] $finalQuarantinePath) {
+  $trialQuarantineRoot = $quarantineRoot
+  $finalQuarantineRoot = [IO.Path]::GetFullPath($finalQuarantinePath)
+  Assert-NoReparsePointAncestor $finalQuarantineRoot
+  Assert-NoReparsePointAncestor $disposableRoot
+  if (Test-Path -LiteralPath $finalQuarantineRoot) {
+    throw 'Choose a new, nonexistent final-restore quarantine path.'
+  }
+  if (
+    (Test-IsWithin $finalQuarantineRoot $trialQuarantineRoot) -or
+    (Test-IsWithin $trialQuarantineRoot $finalQuarantineRoot) -or
+    (Test-IsWithin $finalQuarantineRoot $disposableRoot) -or
+    (Test-IsWithin $disposableRoot $finalQuarantineRoot)
+  ) {
+    throw 'The final-restore quarantine must be separate from the trial quarantine and disposable copy.'
+  }
+  $quarantineRoot = $finalQuarantineRoot
+  $targetRoot = $repo
+  Assert-RestorePathsSafe $targetRoot
+  $null = Invoke-ManifestRestore $targetRoot
+}
 ```
 
 `Restore: TESTED` requires the disposable restore above to produce empty added, deleted, and modified file sets and matching SHA-256 hashes for every file in the persisted complete manifest, followed by the original recorded build and test commands in the restored disposable copy. Record commands, output, hashes, and manifest/evidence paths outside the comparison root. If restore or verification was not run, record `Restore: NOT RUN`; `NOT RUN` cannot complete the migration.
+
+#### Apply the approved restore to the original repository
+
+After reviewing the disposable result and receiving separate owner approval, keep the PowerShell session open so the variables and helper functions defined by the procedure remain available. Keep the disposable copy and its trial quarantine. Choose a new external quarantine path for the original repository; the function stops if the path exists or overlaps the trial quarantine or disposable copy. It rechecks containment and reparse points before applying the restore.
+After that approval, call `Invoke-ApprovedOriginalRestore -finalQuarantinePath '<new-external-quarantine-for-final-restore>'`. If the PowerShell session was closed, rerun the full procedure in a fresh session to define its inputs and helpers, then review the new disposable trial before calling the function.
 
 ### Git restore evidence
 

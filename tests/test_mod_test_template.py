@@ -501,6 +501,11 @@ class RootDocumentationTests(unittest.TestCase):
             "### Non-Git restore",
             "### Git restore evidence",
         )
+        final_restore = markdown_section(
+            MIGRATION_RECOVERY_GUIDE,
+            "#### Apply the approved restore to the original repository",
+            "### Git restore evidence",
+        )
 
         self.assertIn("function Assert-NoReparsePointAncestor", backup)
         self.assertIn("Get-Item -LiteralPath $path -Force", backup)
@@ -562,6 +567,33 @@ class RootDocumentationTests(unittest.TestCase):
             restore.find("Assert-RestorePathsSafe $targetRoot"),
             restore.find("Get-ChildItem -LiteralPath $root -Recurse -File -Force"),
         )
+        self.assertIn("function Invoke-ApprovedOriginalRestore", restore)
+        approved_restore = restore.split(
+            "function Invoke-ApprovedOriginalRestore", 1
+        )[1]
+        assert_ordered(
+            self,
+            approved_restore,
+            (
+                "$trialQuarantineRoot = $quarantineRoot",
+                "$finalQuarantineRoot = [IO.Path]::GetFullPath($finalQuarantinePath)",
+                "Assert-NoReparsePointAncestor $finalQuarantineRoot",
+                "Assert-NoReparsePointAncestor $disposableRoot",
+                "if (Test-Path -LiteralPath $finalQuarantineRoot)",
+                "Test-IsWithin $finalQuarantineRoot $trialQuarantineRoot",
+                "Test-IsWithin $finalQuarantineRoot $disposableRoot",
+                "$quarantineRoot = $finalQuarantineRoot",
+                "$targetRoot = $repo",
+                "Assert-RestorePathsSafe $targetRoot",
+                "$null = Invoke-ManifestRestore $targetRoot",
+            ),
+        )
+        self.assertIn(
+            "Invoke-ApprovedOriginalRestore -finalQuarantinePath "
+            "'<new-external-quarantine-for-final-restore>'",
+            final_restore,
+        )
+        self.assertIn("Keep the disposable copy and its trial quarantine.", final_restore)
         for marker in (
             "repository-manifest.json",
             "Compare-Object",
