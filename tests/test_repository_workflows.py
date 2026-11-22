@@ -105,6 +105,42 @@ class RepositoryWorkflowTests(unittest.TestCase):
                 )
                 assert_validation_trigger_contract(spaced_workflow)
 
+        comment_cases = (
+            ("zero", "# zero-indent comment"),
+            ("two", "  # two-space comment"),
+            ("four", "    # four-space comment"),
+            ("six", "      # six-space comment"),
+        )
+        for name, comment in comment_cases:
+            with self.subTest(comment=name, branches="extra after comment"):
+                commented_workflow = workflow.replace(
+                    "    branches:\n      - main\n      - test-ci\n",
+                    "    branches:\n"
+                    "      - main\n"
+                    f"{comment}\n"
+                    "      - test-ci\n"
+                    "      - release\n",
+                    1,
+                )
+                with self.assertRaises(AssertionError):
+                    assert_validation_trigger_contract(commented_workflow)
+
+        assert_validation_trigger_contract(
+            "on:\n"
+            "# zero-space comment\n"
+            "  pull_request:\n"
+            "  # two-space comment\n"
+            "    branches: [main, test-ci]\n"
+            "  push:\n"
+            "  # two-space comment\n"
+            "    branches:\n"
+            "    # four-space comment\n"
+            "      - main\n"
+            "      # six-space comment\n"
+            "      - test-ci\n"
+            "jobs:\n"
+        )
+
     def test_action_contract_rejects_unknown_and_ignores_local_workflows(self):
         artifacts = REPO_ROOT / "tmp"
         artifacts.mkdir(parents=True, exist_ok=True)

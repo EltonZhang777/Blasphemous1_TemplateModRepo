@@ -55,9 +55,13 @@ def workflow_step(workflow, name):
 
 
 def assert_validation_trigger_contract(workflow):
+    structural_workflow = "\n".join(
+        "" if line.lstrip().startswith("#") else line
+        for line in workflow.splitlines()
+    )
     on_blocks = re.findall(
         r"(?ms)^on:[ \t]*\r?\n(.*?)(?=^\S|\Z)",
-        workflow,
+        structural_workflow,
     )
     if len(on_blocks) != 1:
         raise AssertionError("Workflow must contain one top-level on block.")
