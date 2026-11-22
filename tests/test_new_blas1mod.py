@@ -380,6 +380,21 @@ class EditorConfigParserTests(unittest.TestCase):
             {"dotnet_naming_style.begins_with_i.required_prefix": "I"},
         )
 
+    def test_required_interface_prefix_rejects_lowercase_i(self):
+        _, sections = parse_editorconfig(
+            "[*.cs]\n"
+            "DOTNET_NAMING_STYLE.BEGINS_WITH_I.REQUIRED_PREFIX = i\n"
+        )
+
+        self.assertEqual(
+            sections["[*.cs]"],
+            {"dotnet_naming_style.begins_with_i.required_prefix": "i"},
+        )
+        self.assertNotEqual(
+            sections["[*.cs]"],
+            {"dotnet_naming_style.begins_with_i.required_prefix": "I"},
+        )
+
     def test_same_key_in_different_sections_is_valid(self):
         _, sections = parse_editorconfig(
             "[*.cs]\nindent_size = 4\n[*.xml]\nindent_size = 2\n"
