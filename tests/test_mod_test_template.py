@@ -58,8 +58,6 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
 - **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
 """
-
-
 def normalize_reference_label(label):
     return " ".join(label.split()).casefold()
 
@@ -85,8 +83,6 @@ def link_target(document, destination):
         path = None
         target = document
     return path, target, anchor
-
-
 def local_link_targets(document):
     definitions = reference_definitions(document)
     for line in markdown_prose(document):
