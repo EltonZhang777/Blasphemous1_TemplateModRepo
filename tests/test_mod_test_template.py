@@ -68,7 +68,10 @@ def reference_definitions(document):
         match = MARKDOWN_REFERENCE_DEFINITION.match(line)
         if match:
             destination = match.group(2) or match.group(3)
-            definitions[normalize_reference_label(match.group(1))] = destination
+            definitions.setdefault(
+                normalize_reference_label(match.group(1)),
+                destination,
+            )
     return definitions
 
 

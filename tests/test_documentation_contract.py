@@ -109,6 +109,31 @@ class DocumentationContractTests(unittest.TestCase):
                     sources=(source,),
                 )
 
+    def test_reference_style_links_use_first_duplicate_definition(self):
+        context = "Focused Documentation"
+        with tempfile.TemporaryDirectory() as temporary:
+            owner_root = Path(temporary)
+            (owner_root / "valid.md").write_text("# Valid\n", encoding="utf-8")
+            source = owner_root / "index.md"
+            source.write_text(
+                "[Duplicate][target]\n"
+                "\n"
+                "[target]: missing.md\n"
+                "[target]: valid.md\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                AssertionError,
+                f"{context}: local link target does not exist",
+            ):
+                assert_markdown_contract(
+                    _NonSwallowingAssertions(),
+                    context=context,
+                    owner_root=owner_root,
+                    sources=(source,),
+                )
+
     def test_reference_style_links_report_missing_targets(self):
         context = "Focused Documentation"
         links = {
