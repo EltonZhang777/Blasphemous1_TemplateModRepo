@@ -156,7 +156,7 @@ EXPECTED_CSHARP_RULES = {
     "dotnet_naming_rule.types_should_be_pascal_case.style": "pascal_case",
     "dotnet_naming_rule.types_should_be_pascal_case.symbols": "types",
     "dotnet_naming_style.begins_with_i.capitalization": "pascal_case",
-    "dotnet_naming_style.begins_with_i.required_prefix": "i",
+    "dotnet_naming_style.begins_with_i.required_prefix": "I",
     "dotnet_naming_style.begins_with_i.required_suffix": "",
     "dotnet_naming_style.begins_with_i.word_separator": "",
     "dotnet_naming_style.pascal_case.capitalization": "pascal_case",
@@ -308,7 +308,7 @@ def parse_editorconfig(text):
                 raise ValueError(
                     f"Duplicate EditorConfig key {key!r} in {current_section}."
                 )
-            current[key] = value.strip().lower()
+            current[key] = value.strip()
     return root_values, sections
 
 
@@ -362,12 +362,23 @@ class EditorConfigParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate EditorConfig key"):
             parse_editorconfig(text)
 
-    def test_values_are_normalized_to_lowercase(self):
+    def test_values_preserve_case_and_trim_surrounding_whitespace(self):
         _, sections = parse_editorconfig(
-            "[*.cs]\ninsert_final_newline = TRUE\n"
+            "[*.cs]\ninsert_final_newline =  TRUE  \n"
         )
 
-        self.assertEqual(sections["[*.cs]"]["insert_final_newline"], "true")
+        self.assertEqual(sections["[*.cs]"]["insert_final_newline"], "TRUE")
+
+    def test_required_interface_prefix_preserves_uppercase_i(self):
+        _, sections = parse_editorconfig(
+            "[*.cs]\n"
+            "DOTNET_NAMING_STYLE.BEGINS_WITH_I.REQUIRED_PREFIX = I\n"
+        )
+
+        self.assertEqual(
+            sections["[*.cs]"],
+            {"dotnet_naming_style.begins_with_i.required_prefix": "I"},
+        )
 
     def test_same_key_in_different_sections_is_valid(self):
         _, sections = parse_editorconfig(
