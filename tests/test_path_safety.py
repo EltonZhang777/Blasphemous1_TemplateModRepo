@@ -172,6 +172,51 @@ class PathSafetyTests(unittest.TestCase):
         self.assertIn("context_id=second", message)
         self.assertIn("phase=after", message)
 
+    def test_raw_value_changes_retain_snapshot_identity(self):
+        cases = (
+            (
+                "user",
+                (None, r"C:\Machine"),
+                ("", r"C:\Machine"),
+            ),
+            (
+                "machine",
+                (r"C:\User", None),
+                (r"C:\User", ""),
+            ),
+        )
+
+        for scope, before_values, after_values in cases:
+            with self.subTest(scope=scope):
+                before, after = make_snapshot_pair(
+                    before_values[0],
+                    before_values[1],
+                    after_values[0],
+                    after_values[1],
+                    context_id="raw-path-context",
+                )
+
+                with self.assertRaises(AssertionError) as raised:
+                    path_safety.assert_path_change_allowed(
+                        before, after, PAIR_HIVE
+                    )
+
+                message = str(raised.exception)
+                self.assertIn(
+                    f"Persistent {scope} Path changed outside", message
+                )
+                self.assertIn(
+                    "before: context_id=raw-path-context phase=before "
+                    f"captured_at={CAPTURED_AT.isoformat()}",
+                    message,
+                )
+                self.assertIn(
+                    "after: context_id=raw-path-context phase=after "
+                    "captured_at="
+                    f"{(CAPTURED_AT + timedelta(seconds=1)).isoformat()}",
+                    message,
+                )
+
     def test_context_snapshots_bracket_the_test_body(self):
         context = path_safety.DotnetTestContext(r"C:\repo\tmp\hive")
         events = []

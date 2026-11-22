@@ -182,7 +182,14 @@ def persistent_path_diff(before, after):
                 lineterm="",
             )
         )
-        lines.extend(diff or [f"{scope} Path raw value changed"])
+        lines.extend(
+            diff
+            or [
+                f"{scope} Path raw value changed",
+                f"before: {_snapshot_label(before)}",
+                f"after: {_snapshot_label(after)}",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -207,7 +214,7 @@ def _is_append_only_within_hive(before, after, hive):
         return False
     appended = new_entries[len(old_entries) :]
     if not appended:
-        return path_entries(before) == path_entries(after)
+        return before == after
     if old_trailing - new_trailing not in (0, 1):
         return False
     return all(_is_within_hive(entry, hive) for entry in appended)
