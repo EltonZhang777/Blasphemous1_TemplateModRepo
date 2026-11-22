@@ -37,6 +37,12 @@ MIGRATION_GUIDE = REPO_ROOT / "docs" / "migrate-mod-repository.md"
 MARKDOWN_LOCAL_LINK = re.compile(
     r"\[[^\]]+\]\((?!(?:https?://|mailto:))([^)]+)\)"
 )
+MARKDOWN_REFERENCE_DEFINITION = re.compile(
+    r"^ {0,3}\[([^\]]+)\]:\s*(?:<([^>]+)>|(\S+))"
+)
+MARKDOWN_REFERENCE_LINK = re.compile(
+    r"\[([^\]\n]+)\](?:\[([^\]\n]*)\])?"
+)
 WAYFINDING_PREREQUISITE_TERM = re.compile(
     r"(?i)\b(?:install(?:s|ed|ing|ation)?|setup|set up|set-up|"
     r"setting up|require(?:s|d)?|prerequisite)\b"
@@ -54,17 +60,53 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 """
 
 
+def normalize_reference_label(label):
+    return " ".join(label.split()).casefold()
+
+
+def reference_definitions(document):
+    definitions = {}
+    for line in markdown_prose(document):
+        match = MARKDOWN_REFERENCE_DEFINITION.match(line)
+        if match:
+            destination = match.group(2) or match.group(3)
+            definitions[normalize_reference_label(match.group(1))] = destination
+    return definitions
+
+
+def link_target(document, destination):
+    if destination.lower().startswith(("http://", "https://", "mailto:")):
+        return None
+    relative_path, _, anchor = destination.partition("#")
+    if relative_path:
+        path = Path(relative_path)
+        target = document.parent / path
+    else:
+        path = None
+        target = document
+    return path, target, anchor
+
+
 def local_link_targets(document):
+    definitions = reference_definitions(document)
     for line in markdown_prose(document):
         for match in MARKDOWN_LOCAL_LINK.finditer(line):
-            relative_path, _, anchor = match.group(1).partition("#")
-            if relative_path:
-                path = Path(relative_path)
-                target = document.parent / path
-            else:
-                path = None
-                target = document
-            yield path, target, anchor
+            resolved = link_target(document, match.group(1))
+            if resolved is not None:
+                yield resolved
+        if MARKDOWN_REFERENCE_DEFINITION.match(line):
+            continue
+        for match in MARKDOWN_REFERENCE_LINK.finditer(line):
+            link_text, explicit_label = match.groups()
+            if explicit_label is None and line[match.end() :].startswith("("):
+                continue
+            label = link_text if explicit_label in (None, "") else explicit_label
+            destination = definitions.get(normalize_reference_label(label))
+            if destination is None:
+                continue
+            resolved = link_target(document, destination)
+            if resolved is not None:
+                yield resolved
 
 
 def heading_anchors(document):

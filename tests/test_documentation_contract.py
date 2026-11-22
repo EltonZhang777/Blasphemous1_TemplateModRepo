@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,7 +17,126 @@ TEST_TEMPLATE_README = (
 )
 
 
+class _NonSwallowingAssertions(unittest.TestCase):
+    def subTest(self, **kwargs):
+        return nullcontext()
+
+
 class DocumentationContractTests(unittest.TestCase):
+    def test_reference_style_local_links_resolve(self):
+        context = "Meta-Repository Documentation"
+        with tempfile.TemporaryDirectory() as temporary:
+            owner_root = Path(temporary)
+            target = owner_root / "target.md"
+            target.write_text("# Existing Heading\n", encoding="utf-8")
+            source = owner_root / "index.md"
+            source.write_text(
+                "[Inline](target.md#existing-heading)\n"
+                "[Full reference][full]\n"
+                "[collapsed][]\n"
+                "[shortcut]\n"
+                "[HTTP][http]\n"
+                "[HTTPS][https]\n"
+                "[mail][mail]\n"
+                "\n"
+                "[full]: target.md#existing-heading\n"
+                "[collapsed]: target.md#existing-heading\n"
+                "[shortcut]: target.md#existing-heading\n"
+                "[http]: http://example.com\n"
+                "[https]: https://example.com\n"
+                "[mail]: mailto:maintainer@example.com\n",
+                encoding="utf-8",
+            )
+
+            assert_markdown_contract(
+                self,
+                context=context,
+                owner_root=owner_root,
+                sources=(source,),
+            )
+
+    def test_reference_style_links_cannot_escape_owner_root(self):
+        context = "Meta-Repository Documentation"
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            owner_root = workspace / "meta"
+            docs = owner_root / "docs"
+            docs.mkdir(parents=True)
+            (workspace / "generated").mkdir()
+            outside_target = workspace / "generated" / "outside.md"
+            outside_target.write_text("# Outside\n", encoding="utf-8")
+            source = docs / "index.md"
+            source.write_text(
+                "[Outside][outside]\n"
+                "\n"
+                "[outside]: ../../generated/outside.md#outside\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                AssertionError,
+                f"{context}: local link escapes its documentation boundary",
+            ):
+                assert_markdown_contract(
+                    _NonSwallowingAssertions(),
+                    context=context,
+                    owner_root=owner_root,
+                    sources=(source,),
+                )
+
+    def test_reference_style_links_report_missing_anchors(self):
+        context = "Generated Repository Documentation"
+        with tempfile.TemporaryDirectory() as temporary:
+            owner_root = Path(temporary)
+            target = owner_root / "target.md"
+            target.write_text("# Existing Heading\n", encoding="utf-8")
+            source = owner_root / "index.md"
+            source.write_text(
+                "[Missing anchor][target]\n"
+                "\n"
+                "[target]: target.md#missing-heading\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                AssertionError,
+                f"{context}: missing link anchor #missing-heading",
+            ):
+                assert_markdown_contract(
+                    _NonSwallowingAssertions(),
+                    context=context,
+                    owner_root=owner_root,
+                    sources=(source,),
+                )
+
+    def test_reference_style_links_report_missing_targets(self):
+        context = "Focused Documentation"
+        links = {
+            "full": "[Full reference][missing]",
+            "collapsed": "[missing][]",
+            "shortcut": "[missing]",
+        }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            owner_root = Path(temporary)
+            source = owner_root / "index.md"
+            for style, link in links.items():
+                with self.subTest(style=style):
+                    source.write_text(
+                        f"{link}\n\n[missing]: missing.md\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        AssertionError,
+                        f"{context}: local link target does not exist",
+                    ):
+                        assert_markdown_contract(
+                            _NonSwallowingAssertions(),
+                            context=context,
+                            owner_root=owner_root,
+                            sources=(source,),
+                        )
+
     def test_path_safety_documentation_links_resolve(self):
         assert_markdown_contract(
             self,
