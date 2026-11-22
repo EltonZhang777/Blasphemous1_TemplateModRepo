@@ -76,20 +76,25 @@ def assert_validation_trigger_contract(workflow):
         )
         block_lists = re.findall(
             r"(?ms)^    branches:[ \t]*(?:#[^\r\n]*)?\r?\n"
-            r"((?:^      -[^\r\n]*(?:\r?\n|$))+)",
+            r"(.*?)(?=^    \S|\Z)",
             sections[0],
         )
         if len(inline_lists) + len(block_lists) != 1:
             raise AssertionError(f"on.{event} must contain one branch list.")
 
-        values = (
-            inline_lists[0].split(",")
-            if inline_lists
-            else [
-                line[8:] if line.startswith("      - ") else ""
-                for line in block_lists[0].splitlines()
-            ]
-        )
+        if inline_lists:
+            values = inline_lists[0].split(",")
+        else:
+            values = []
+            for line in block_lists[0].splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if not line.startswith("      - "):
+                    raise AssertionError(
+                        f"on.{event} branch list contains a malformed entry."
+                    )
+                values.append(line[8:])
         if inline_lists and values[-1].strip() == "":
             values.pop()
         branches = []

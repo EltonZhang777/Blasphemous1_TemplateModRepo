@@ -63,6 +63,16 @@ class RepositoryWorkflowTests(unittest.TestCase):
             "    branches: [main]",
             "    branches: [main, test-ci, release]",
             '    branches: [main, "test-ci]',
+            "    branches:\n"
+            "      - main\n"
+            "      - test-ci\n"
+            "\n"
+            "      - release",
+            "    branches:\n"
+            "      - main\n"
+            "      # comments do not end the branch block\n"
+            "      - test-ci\n"
+            "      - release",
         )
 
         for event, valid_branch_list in (
@@ -78,6 +88,22 @@ class RepositoryWorkflowTests(unittest.TestCase):
                     )
                     with self.assertRaises(AssertionError):
                         assert_validation_trigger_contract(invalid_workflow)
+
+        for event, valid_branch_list in (
+            ("pull_request", "    branches: [main, test-ci]\n"),
+            ("push", "    branches:\n      - main\n      - test-ci\n"),
+        ):
+            with self.subTest(event=event, branches="spaced block"):
+                spaced_workflow = workflow.replace(
+                    valid_branch_list,
+                    "    branches:\n"
+                    "      - main\n"
+                    "\n"
+                    "      # a comment inside the list\n"
+                    "      - test-ci\n",
+                    1,
+                )
+                assert_validation_trigger_contract(spaced_workflow)
 
     def test_action_contract_rejects_unknown_and_ignores_local_workflows(self):
         artifacts = REPO_ROOT / "tmp"
