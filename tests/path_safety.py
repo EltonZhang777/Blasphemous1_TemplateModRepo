@@ -4,8 +4,10 @@ import os
 import re
 import sys
 import unittest
+import uuid
 import winreg
 from collections import namedtuple
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -19,16 +21,23 @@ REPOSITORY_TEST_HIVE = re.compile(
     r"[^;]*[\\/]hive[\\/]\.dotnet[\\/]tools(?:[\\/]|$)"
 )
 
-PathSnapshot = namedtuple("PathSnapshot", "user machine")
+PathSnapshot = namedtuple(
+    "PathSnapshot", "user machine context_id phase captured_at"
+)
 _reported_preflight_entries = set()
 
 
-def capture_path_snapshot():
+def capture_path_snapshot(context_id, phase):
+    if not context_id or phase not in {"before", "after"}:
+        raise ValueError("A PATH snapshot requires a context id and valid phase.")
     return PathSnapshot(
         _read_persistent_path(winreg.HKEY_CURRENT_USER, USER_ENVIRONMENT_KEY),
         _read_persistent_path(
             winreg.HKEY_LOCAL_MACHINE, MACHINE_ENVIRONMENT_KEY
         ),
+        context_id,
+        phase,
+        datetime.now(timezone.utc),
     )
 
 
@@ -80,7 +89,8 @@ def report_preflight(snapshot):
     ]
     if new_entries:
         print(
-            "PATH safety preflight found repository Test Hive entries:",
+            "PATH safety preflight found repository Test Hive entries "
+            f"({_snapshot_label(snapshot)}):",
             file=sys.stderr,
         )
         for scope, entry in new_entries:
@@ -89,18 +99,72 @@ def report_preflight(snapshot):
     return entries
 
 
-def skip_message(entry_count):
+def skip_message(entry_count, snapshot=None):
+    snapshot_detail = (
+        f" Snapshot: {_snapshot_label(snapshot)}." if snapshot else ""
+    )
     return (
         "DOTNET_CLI_HOME isolates template-engine state, but it is not a "
         "Windows-user isolation boundary. Dotnet-backed template tests require "
         "a Disposable Test Context: an ephemeral CI runner, Windows Sandbox, or "
         "another disposable VM. Set "
         f"{DISPOSABLE_TEST_CONTEXT}=1 only inside that context. Preflight found "
-        f"{entry_count} repository Test Hive PATH entries."
+        f"{entry_count} repository Test Hive PATH entries.{snapshot_detail}"
     )
 
 
+def _snapshot_label(snapshot):
+    if snapshot is None:
+        return "missing snapshot"
+    captured_at = snapshot.captured_at
+    captured_at = (
+        captured_at.isoformat()
+        if isinstance(captured_at, datetime)
+        else captured_at
+    )
+    return (
+        f"context_id={snapshot.context_id} phase={snapshot.phase} "
+        f"captured_at={captured_at!s}"
+    )
+
+
+def _assert_path_snapshot_pair(before, after):
+    details = f"before[{_snapshot_label(before)}]; after[{_snapshot_label(after)}]"
+    if before is None or after is None:
+        raise AssertionError(
+            "Persistent PATH snapshots require a complete before/after pair: "
+            f"{details}"
+        )
+    if before.phase != "before" or after.phase != "after":
+        raise AssertionError(
+            "Persistent PATH snapshots require one before and one after "
+            f"phase: {details}"
+        )
+    if not before.context_id or before.context_id != after.context_id:
+        raise AssertionError(
+            "Persistent PATH snapshots must have the same context id: "
+            f"{details}"
+        )
+    for snapshot in (before, after):
+        captured_at = snapshot.captured_at
+        if (
+            not isinstance(captured_at, datetime)
+            or captured_at.utcoffset() != timezone.utc.utcoffset(captured_at)
+        ):
+            raise AssertionError(
+                "Persistent PATH snapshots require a UTC capture time: "
+                f"{details}"
+            )
+    if after.captured_at < before.captured_at:
+        raise AssertionError(
+            "Persistent PATH snapshot capture times are out of order: "
+            f"{details}"
+        )
+    return before, after
+
+
 def persistent_path_diff(before, after):
+    before, after = _assert_path_snapshot_pair(before, after)
     lines = []
     for scope in ("user", "machine"):
         old = getattr(before, scope)
@@ -111,12 +175,21 @@ def persistent_path_diff(before, after):
             difflib.unified_diff(
                 path_entries(old),
                 path_entries(new),
-                fromfile=f"{scope} Path before",
-                tofile=f"{scope} Path after",
+                fromfile=(
+                    f"{scope} Path before ({_snapshot_label(before)})"
+                ),
+                tofile=f"{scope} Path after ({_snapshot_label(after)})",
                 lineterm="",
             )
         )
-        lines.extend(diff or [f"{scope} Path raw value changed"])
+        lines.extend(
+            diff
+            or [
+                f"{scope} Path raw value changed",
+                f"before: {_snapshot_label(before)}",
+                f"after: {_snapshot_label(after)}",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -141,7 +214,7 @@ def _is_append_only_within_hive(before, after, hive):
         return False
     appended = new_entries[len(old_entries) :]
     if not appended:
-        return path_entries(before) == path_entries(after)
+        return before == after
     if old_trailing - new_trailing not in (0, 1):
         return False
     return all(_is_within_hive(entry, hive) for entry in appended)
@@ -165,30 +238,35 @@ def assert_path_change_allowed(before, after, hive):
 class DotnetTestContext:
     def __init__(self, hive):
         self.hive = Path(hive)
+        self.context_id = uuid.uuid4().hex
         self.before = None
         self.active = False
 
     def start(self):
-        self.before = capture_path_snapshot()
+        self.before = capture_path_snapshot(self.context_id, "before")
         entries = report_preflight(self.before)
         if not is_disposable_context():
-            after = capture_path_snapshot()
+            after = capture_path_snapshot(self.context_id, "after")
             assert_path_change_allowed(self.before, after, self.hive)
-            raise unittest.SkipTest(skip_message(len(entries)))
+            raise unittest.SkipTest(
+                skip_message(len(entries), self.before)
+            )
         self.active = True
 
     def finish(self):
         if not self.active:
             return
-        after = capture_path_snapshot()
-        diff = assert_path_change_allowed(self.before, after, self.hive)
+        after = capture_path_snapshot(self.context_id, "after")
+        try:
+            diff = assert_path_change_allowed(self.before, after, self.hive)
+        finally:
+            self.active = False
         if diff:
             print(
                 "Persistent PATH changes stayed within the declared Test Hive "
                 f"{self.hive}:\n{diff}",
                 file=sys.stderr,
             )
-        self.active = False
 
     def __enter__(self):
         self.start()

@@ -54,6 +54,65 @@ def workflow_step(workflow, name):
     return match.group(1)
 
 
+def assert_validation_trigger_contract(workflow):
+    structural_workflow = "\n".join(
+        "" if line.lstrip().startswith("#") else line
+        for line in workflow.splitlines()
+    )
+    on_blocks = re.findall(
+        r"(?ms)^on:[ \t]*\r?\n(.*?)(?=^\S|\Z)",
+        structural_workflow,
+    )
+    if len(on_blocks) != 1:
+        raise AssertionError("Workflow must contain one top-level on block.")
+
+    for event in ("pull_request", "push"):
+        sections = re.findall(
+            rf"(?ms)^  {event}:[ \t]*\r?\n(.*?)(?=^  \S|\Z)",
+            on_blocks[0],
+        )
+        if len(sections) != 1:
+            raise AssertionError(f"Workflow must contain one on.{event} trigger.")
+
+        inline_lists = re.findall(
+            r"(?m)^    branches:[ \t]*\[([^\]\r\n]*)\][ \t]*(?:#[^\r\n]*)?$",
+            sections[0],
+        )
+        block_lists = re.findall(
+            r"(?ms)^    branches:[ \t]*(?:#[^\r\n]*)?\r?\n"
+            r"(.*?)(?=^    \S|\Z)",
+            sections[0],
+        )
+        if len(inline_lists) + len(block_lists) != 1:
+            raise AssertionError(f"on.{event} must contain one branch list.")
+
+        if inline_lists:
+            values = inline_lists[0].split(",")
+        else:
+            values = []
+            for line in block_lists[0].splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if not line.startswith("      - "):
+                    raise AssertionError(
+                        f"on.{event} branch list contains a malformed entry."
+                    )
+                values.append(line[8:])
+        if inline_lists and values[-1].strip() == "":
+            values.pop()
+        branches = []
+        for value in values:
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+            if value[:1] in {"'", '"'} and value[-1:] == value[:1]:
+                value = value[1:-1]
+            branches.append(value)
+        if len(branches) != 2 or set(branches) != {"main", "test-ci"}:
+            raise AssertionError(
+                f"on.{event} must target exactly main and test-ci; got {branches!r}."
+            )
+
+
 def assert_nuget_release_guards(workflow, publish_name="Publish NuGet package"):
     warning_step = workflow_step(workflow, "Warn when NuGet username is missing")
     login_step = workflow_step(workflow, "NuGet login")
